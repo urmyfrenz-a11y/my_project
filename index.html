@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>나의 하루, 나의 삶</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Nanum+Pen+Script&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="diary-container">
+        <header class="diary-header">
+            <h1>나의 하루, 나의 삶</h1>
+            <p>당신의 소중한 순간을 기록하세요.</p>
+            <button id="writeBtn" class="vintage-btn">새 일기 쓰기</button>
+        </header>
+
+        <main id="diaryList" class="diary-grid">
+            <!-- 다이어리 카드들이 여기에 동적으로 추가됩니다 -->
+        </main>
+    </div>
+
+    <!-- 글쓰기 모달 -->
+    <div id="writeModal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2>새로운 기록</h2>
+            
+            <form id="diaryForm">
+                <div class="photo-upload-area">
+                    <input type="file" id="photoInput" accept="image/*" capture="environment" class="hidden-input">
+                    <label for="photoInput" class="upload-label">
+                        <div class="upload-icon">📷</div>
+                        <span>사진 추가하기</span>
+                        <small>(클릭 또는 터치)</small>
+                    </label>
+                    <div id="photoPreview" class="hidden">
+                        <img id="previewImg" src="" alt="미리보기">
+                        <button type="button" id="removePhotoBtn" class="remove-btn">✕</button>
+                    </div>
+                </div>
+
+                <div class="text-area-wrapper">
+                    <textarea id="diaryText" placeholder="오늘 하루는 어땠나요? (최대 1000자)" maxlength="1000" required></textarea>
+                    <div class="char-counter"><span id="charCount">0</span> / 1000</div>
+                </div>
+
+                <button type="submit" class="vintage-btn submit-btn">기록하기</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
