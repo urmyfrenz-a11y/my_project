@@ -10,7 +10,9 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
     "dotenv": "^16.4.5",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "multer": "^2.1.1",
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

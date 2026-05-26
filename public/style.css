@@ -619,3 +619,84 @@ button { font-family: var(--font); cursor: pointer; }
   .chips-grid { gap: 8px; }
   .chip { font-size: .84rem; padding: 8px 14px; }
 }
+
+/* ── PDF 업로드 버튼 ─────────────────────────────────────── */
+.pdf-upload-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--t3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  transition: color .15s, background .15s;
+}
+.pdf-upload-btn:hover {
+  color: var(--accent);
+  background: rgba(37,99,235,.08);
+}
+.pdf-upload-btn.has-pdf {
+  color: var(--accent);
+}
+.pdf-upload-btn:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+/* ── PDF 배지 (업로드 후 표시) ───────────────────────────── */
+.pdf-badge-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  margin-bottom: 6px;
+  background: rgba(37,99,235,.06);
+  border: 1px solid rgba(37,99,235,.18);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+
+.pdf-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(37,99,235,.1);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: .82rem;
+  color: var(--accent);
+  font-weight: 500;
+  max-width: 100%;
+}
+
+.pdf-badge svg {
+  flex-shrink: 0;
+}
+
+.pdf-badge-pages {
+  color: var(--t3);
+  font-weight: 400;
+  font-size: .78rem;
+}
+
+.pdf-badge-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--t3);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 2px;
+  margin-left: 2px;
+  transition: color .15s;
+}
+.pdf-badge-remove:hover { color: #ef4444; }
+
+.pdf-badge-hint {
+  font-size: .78rem;
+  color: var(--t2);
+}

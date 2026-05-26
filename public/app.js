@@ -34,17 +34,29 @@ let currentId = null;      // active conversation id
 let currentMsgs = [];      // current message list [{role, content}]
 let isGenerating = false;
 
+// PDF 컨텍스트 상태
+let pdfContext = null;     // 추출된 PDF 텍스트
+let pdfFilename = '';      // 업로드한 파일 이름
+
 /* ── DOM ────────────────────────────────────────────────── */
-const messagesArea  = document.getElementById('messagesArea');
-const messageInput  = document.getElementById('messageInput');
-const sendBtn       = document.getElementById('sendBtn');
-const welcomeScreen = document.getElementById('welcomeScreen');
-const newChatBtn    = document.getElementById('newChatBtn');
-const clearChatBtn  = document.getElementById('clearChatBtn');
-const menuToggle    = document.getElementById('menuToggle');
-const sidebar       = document.getElementById('sidebar');
+const messagesArea   = document.getElementById('messagesArea');
+const messageInput   = document.getElementById('messageInput');
+const sendBtn        = document.getElementById('sendBtn');
+const welcomeScreen  = document.getElementById('welcomeScreen');
+const newChatBtn     = document.getElementById('newChatBtn');
+const clearChatBtn   = document.getElementById('clearChatBtn');
+const menuToggle     = document.getElementById('menuToggle');
+const sidebar        = document.getElementById('sidebar');
 const sidebarOverlay = document.getElementById('sidebarOverlay');
-const historyList   = document.getElementById('historyList');
+const historyList    = document.getElementById('historyList');
+
+// PDF 관련 DOM
+const pdfUploadBtn  = document.getElementById('pdfUploadBtn');
+const pdfFileInput  = document.getElementById('pdfFileInput');
+const pdfBadgeWrap  = document.getElementById('pdfBadgeWrap');
+const pdfBadgeName  = document.getElementById('pdfBadgeName');
+const pdfBadgePages = document.getElementById('pdfBadgePages');
+const pdfRemoveBtn  = document.getElementById('pdfRemoveBtn');
 
 /* ── Init ───────────────────────────────────────────────── */
 renderHistory();
@@ -69,6 +81,63 @@ document.querySelectorAll('.chip').forEach(chip =>
     trySend();
   })
 );
+
+// PDF 버튼 클릭 → 파일 선택 창 열기
+pdfUploadBtn.addEventListener('click', () => pdfFileInput.click());
+
+// PDF 파일 선택 → 업로드 및 텍스트 추출
+pdfFileInput.addEventListener('change', async () => {
+  const file = pdfFileInput.files[0];
+  if (!file) return;
+
+  // 버튼 로딩 표시
+  pdfUploadBtn.disabled = true;
+  pdfUploadBtn.style.opacity = '0.5';
+
+  try {
+    const formData = new FormData();
+    formData.append('pdf', file);
+
+    const res = await fetch('/api/upload-pdf', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'PDF 업로드 실패');
+
+    // 상태 저장
+    pdfContext  = data.text;
+    pdfFilename = data.filename;
+
+    // 배지 표시
+    pdfBadgeName.textContent  = data.filename;
+    pdfBadgePages.textContent = `(${data.pages}페이지)`;
+    pdfBadgeWrap.style.display = 'flex';
+
+    // 업로드 버튼 활성화 표시
+    pdfUploadBtn.classList.add('has-pdf');
+
+  } catch (err) {
+    alert(`⚠️ ${err.message}`);
+  } finally {
+    pdfUploadBtn.disabled = false;
+    pdfUploadBtn.style.opacity = '';
+    pdfFileInput.value = ''; // 같은 파일 재선택 가능하게
+  }
+});
+
+// PDF 제거 버튼
+pdfRemoveBtn.addEventListener('click', clearPdf);
+
+function clearPdf() {
+  pdfContext  = null;
+  pdfFilename = '';
+  pdfBadgeWrap.style.display = 'none';
+  pdfBadgeName.textContent   = '';
+  pdfBadgePages.textContent  = '';
+  pdfUploadBtn.classList.remove('has-pdf');
+}
 
 /* ── Input helpers ──────────────────────────────────────── */
 function onInputChange() { resizeTextarea(); updateSendBtn(); }
@@ -241,10 +310,14 @@ async function sendMessage() {
   let fullText = '';
 
   try {
+    const body = { messages: currentMsgs };
+    // PDF 컨텍스트가 있으면 함께 전송
+    if (pdfContext) body.pdfContext = pdfContext;
+
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: currentMsgs }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
