@@ -82,48 +82,56 @@ document.querySelectorAll('.chip').forEach(chip =>
   })
 );
 
+// PDF.js worker 설정
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
 // PDF 버튼 클릭 → 파일 선택 창 열기
 pdfUploadBtn.addEventListener('click', () => pdfFileInput.click());
 
-// PDF 파일 선택 → 업로드 및 텍스트 추출
+// PDF 파일 선택 → 브라우저에서 직접 텍스트 추출
 pdfFileInput.addEventListener('change', async () => {
   const file = pdfFileInput.files[0];
   if (!file) return;
 
-  // 버튼 로딩 표시
   pdfUploadBtn.disabled = true;
   pdfUploadBtn.style.opacity = '0.5';
 
   try {
-    const formData = new FormData();
-    formData.append('pdf', file);
+    // 파일을 ArrayBuffer로 읽기
+    const arrayBuffer = await file.arrayBuffer();
 
-    const res = await fetch('/api/upload-pdf', {
-      method: 'POST',
-      body: formData,
-    });
+    // PDF.js로 텍스트 추출
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const pageTexts = [];
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'PDF 업로드 실패');
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map(item => item.str).join(' ').trim();
+      if (pageText) pageTexts.push(pageText);
+    }
+
+    const extracted = pageTexts.join('\n\n');
+    if (!extracted) throw new Error('이 PDF에서 텍스트를 추출할 수 없습니다. (이미지 전용 PDF일 수 있습니다)');
 
     // 상태 저장
-    pdfContext  = data.text;
-    pdfFilename = data.filename;
+    pdfContext  = extracted;
+    pdfFilename = file.name;
 
     // 배지 표시
-    pdfBadgeName.textContent  = data.filename;
-    pdfBadgePages.textContent = `(${data.pages}페이지)`;
+    pdfBadgeName.textContent   = file.name;
+    pdfBadgePages.textContent  = `(${pdf.numPages}페이지)`;
     pdfBadgeWrap.style.display = 'flex';
-
-    // 업로드 버튼 활성화 표시
     pdfUploadBtn.classList.add('has-pdf');
 
   } catch (err) {
-    alert(`⚠️ ${err.message}`);
+    alert(`⚠️ PDF 읽기 실패: ${err.message}`);
+    clearPdf();
   } finally {
     pdfUploadBtn.disabled = false;
     pdfUploadBtn.style.opacity = '';
-    pdfFileInput.value = ''; // 같은 파일 재선택 가능하게
+    pdfFileInput.value = '';
   }
 });
 
