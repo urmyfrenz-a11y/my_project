@@ -11,7 +11,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', model: 'gemini-2.0-flash' });
+  res.json({ status: 'ok', model: 'gemini-1.5-flash' });
 });
 
 // Streaming chat endpoint
@@ -43,7 +43,7 @@ app.post('/api/chat', async (req, res) => {
 
   try {
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-1.5-flash',
       systemInstruction:
         '당신은 친절하고 유능한 AI 어시스턴트입니다. ' +
         '사용자가 사용하는 언어로 자연스럽게 답변해 주세요. ' +
