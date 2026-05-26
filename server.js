@@ -13,42 +13,49 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     model: 'claude-sonnet-4-6',
-    searchEnabled: !!process.env.SERPER_API_KEY,
+    searchEnabled: !!process.env.BRAVE_API_KEY,
   });
 });
 
-// ── 구글 검색 (Serper.dev) ────────────────────────────────
-async function searchGoogle(query) {
-  const key = process.env.SERPER_API_KEY;
-  if (!key) throw new Error('SERPER_API_KEY가 설정되지 않았습니다.');
+// ── 웹 검색 (Brave Search API) ────────────────────────────
+async function searchWeb(query) {
+  const key = process.env.BRAVE_API_KEY;
+  if (!key) throw new Error('BRAVE_API_KEY가 설정되지 않았습니다.');
 
-  const res = await fetch('https://google.serper.dev/search', {
-    method: 'POST',
+  const url = new URL('https://api.search.brave.com/res/v1/web/search');
+  url.searchParams.set('q', query);
+  url.searchParams.set('count', '5');
+  url.searchParams.set('country', 'KR');
+  url.searchParams.set('search_lang', 'ko');
+  url.searchParams.set('text_decorations', '0');
+
+  const res = await fetch(url.toString(), {
     headers: {
-      'X-API-KEY': key,
-      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip',
+      'X-Subscription-Token': key,
     },
-    body: JSON.stringify({ q: query, num: 5, gl: 'kr', hl: 'ko' }),
   });
 
-  if (!res.ok) throw new Error(`검색 API 오류: ${res.status}`);
+  if (!res.ok) throw new Error(`Brave Search API 오류: ${res.status}`);
   return res.json();
 }
 
 function formatSearchResults(data) {
   const parts = [];
 
-  // 즉답 박스 (날씨·환율 등 바로 답변되는 경우)
-  if (data.answerBox) {
-    const ab = data.answerBox;
-    const text = ab.answer || ab.snippet || '';
-    if (text) parts.push(`[검색 요약]\n${text}`);
+  // 뉴스 결과
+  if (data.news?.results?.length > 0) {
+    const news = data.news.results.slice(0, 2);
+    news.forEach((r, i) => {
+      parts.push(`[뉴스 ${i + 1}] ${r.title}\n${r.description || ''}\n출처: ${r.url}`);
+    });
   }
 
-  // 일반 검색 결과 (상위 5개)
-  if (data.organic && data.organic.length > 0) {
-    data.organic.slice(0, 5).forEach((r, i) => {
-      parts.push(`[결과 ${i + 1}] ${r.title}\n${r.snippet || ''}\n출처: ${r.link}`);
+  // 일반 웹 결과 (상위 5개)
+  if (data.web?.results?.length > 0) {
+    data.web.results.slice(0, 5).forEach((r, i) => {
+      parts.push(`[결과 ${i + 1}] ${r.title}\n${r.description || ''}\n출처: ${r.url}`);
     });
   }
 
@@ -76,9 +83,9 @@ app.post('/api/chat', async (req, res) => {
   if (useSearch) {
     try {
       const query = validMessages[validMessages.length - 1].content;
-      const data  = await searchGoogle(query);
+      const data  = await searchWeb(query);
       searchContext = formatSearchResults(data);
-      console.log(`[Search] "${query}" → ${data.organic?.length || 0}개 결과`);
+      console.log(`[Search] "${query}" → ${data.web?.results?.length || 0}개 결과`);
     } catch (err) {
       console.error('[Search Error]', err.message);
       // 검색 실패 시 일반 답변으로 폴백 (오류 중단 없음)
@@ -153,5 +160,5 @@ app.get('*', (_req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`\n🚀 AI 챗봇 서버 시작: http://localhost:${PORT}`);
-  console.log(`🔍 구글 검색: ${process.env.SERPER_API_KEY ? '활성화' : '비활성화 (SERPER_API_KEY 없음)'}\n`);
+  console.log(`🔍 웹 검색: ${process.env.BRAVE_API_KEY ? '활성화 (Brave Search)' : '비활성화 (BRAVE_API_KEY 없음)'}\n`);
 });
