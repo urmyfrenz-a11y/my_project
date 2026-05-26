@@ -134,9 +134,14 @@ pdfFileInput.addEventListener('change', async () => {
     pdfContext  = extracted;
     pdfFilename = file.name;
 
+    // 페이지 수 표시 + 긴 문서 안내
+    const pageInfo = pdf.numPages > 50
+      ? `(${pdf.numPages}페이지 · 앞부분 위주로 참고)`
+      : `(${pdf.numPages}페이지)`;
+
     // 배지 표시
     pdfBadgeName.textContent   = file.name;
-    pdfBadgePages.textContent  = `(${pdf.numPages}페이지)`;
+    pdfBadgePages.textContent  = pageInfo;
     pdfBadgeWrap.style.display = 'flex';
     pdfUploadBtn.classList.add('has-pdf');
 

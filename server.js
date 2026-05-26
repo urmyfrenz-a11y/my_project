@@ -101,9 +101,17 @@ app.post('/api/chat', async (req, res) => {
     '필요시 목록이나 제목 등 마크다운 서식을 활용해 가독성 좋게 답변해 주세요.';
 
   if (pdfContext) {
+    // Claude 입력 토큰 한도 보호: 최대 120,000자 (≈ 30,000 토큰)
+    const MAX_PDF_CHARS = 120000;
+    const trimmed = pdfContext.length > MAX_PDF_CHARS;
+    const safePdf  = trimmed ? pdfContext.slice(0, MAX_PDF_CHARS) : pdfContext;
+    if (trimmed) {
+      console.warn(`[PDF] 텍스트가 너무 길어 ${MAX_PDF_CHARS}자로 잘랐습니다. (원본: ${pdfContext.length}자)`);
+    }
     systemPrompt +=
       '\n\n아래는 사용자가 업로드한 PDF 문서의 내용입니다. 질문에 답할 때 참고하세요.' +
-      `\n\n---\n${pdfContext}\n---`;
+      (trimmed ? '\n(문서가 길어 앞부분만 포함됐습니다.)' : '') +
+      `\n\n---\n${safePdf}\n---`;
   }
 
   if (searchContext) {
@@ -139,16 +147,25 @@ app.post('/api/chat', async (req, res) => {
     stream.on('message', () => { sendEvent({ type: 'done' }); res.end(); });
     stream.on('error', (error) => {
       console.error('[Stream Error]', error.message);
-      sendEvent({ type: 'error', message: '스트리밍 오류가 발생했습니다.' });
+      // 토큰 초과 에러를 사용자 친화적으로 변환
+      let msg = error.message || '스트리밍 오류가 발생했습니다.';
+      if (msg.includes('too long') || msg.includes('token') || msg.includes('length')) {
+        msg = 'PDF 내용이 너무 많아 처리하지 못했습니다. 더 짧은 문서를 사용하거나, 필요한 부분만 복사해서 질문해 주세요.';
+      }
+      sendEvent({ type: 'error', message: msg });
       res.end();
     });
 
   } catch (error) {
     console.error('[API Error]', error.message);
-    if (!res.headersSent) {
-      return res.status(500).json({ error: 'AI 서비스에 연결할 수 없습니다.' });
+    let msg = error.message || '오류가 발생했습니다.';
+    if (msg.includes('too long') || msg.includes('token') || msg.includes('length')) {
+      msg = 'PDF 내용이 너무 많아 처리하지 못했습니다. 더 짧은 문서를 사용하거나, 필요한 부분만 복사해서 질문해 주세요.';
     }
-    sendEvent({ type: 'error', message: error.message || '오류가 발생했습니다.' });
+    if (!res.headersSent) {
+      return res.status(500).json({ error: msg });
+    }
+    sendEvent({ type: 'error', message: msg });
     res.end();
   }
 });
