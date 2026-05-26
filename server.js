@@ -1,17 +1,17 @@
 require('dotenv').config();
 const express = require('express');
-const Anthropic = require('@anthropic-ai/sdk');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const path = require('path');
 
 const app = express();
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', model: 'claude-sonnet-4-6' });
+  res.json({ status: 'ok', model: 'gemini-2.0-flash' });
 });
 
 // Streaming chat endpoint
@@ -22,7 +22,6 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: '메시지가 필요합니다.' });
   }
 
-  // Validate message format
   const validMessages = messages.filter(
     m => m && typeof m.role === 'string' && typeof m.content === 'string'
   );
@@ -43,42 +42,47 @@ app.post('/api/chat', async (req, res) => {
   };
 
   try {
-    const stream = client.messages.stream({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8096,
-      system:
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      systemInstruction:
         '당신은 친절하고 유능한 AI 어시스턴트입니다. ' +
         '사용자가 사용하는 언어로 자연스럽게 답변해 주세요. ' +
         '코드를 작성할 때는 마크다운 코드 블록을 사용하고, ' +
         '필요시 목록이나 제목 등 마크다운 서식을 활용해 가독성 좋게 답변해 주세요.',
-      messages: validMessages,
     });
 
-    stream.on('text', (text) => {
-      sendEvent({ type: 'text', content: text });
-    });
+    // Gemini uses 'user' / 'model' roles (not 'assistant')
+    // History = all messages except the last user message
+    const history = validMessages.slice(0, -1).map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
 
-    stream.on('message', () => {
-      sendEvent({ type: 'done' });
-      res.end();
-    });
+    const lastMessage = validMessages[validMessages.length - 1];
 
-    stream.on('error', (error) => {
-      console.error('[Stream Error]', error.message);
-      sendEvent({ type: 'error', message: '스트리밍 오류가 발생했습니다.' });
-      res.end();
-    });
+    const chat = model.startChat({ history });
+    const result = await chat.sendMessageStream(lastMessage.content);
+
+    for await (const chunk of result.stream) {
+      const text = chunk.text();
+      if (text) {
+        sendEvent({ type: 'text', content: text });
+      }
+    }
+
+    sendEvent({ type: 'done' });
+    res.end();
   } catch (error) {
     console.error('[API Error]', error.message);
     if (!res.headersSent) {
       return res.status(500).json({ error: 'AI 서비스에 연결할 수 없습니다.' });
     }
-    sendEvent({ type: 'error', message: 'AI 서비스 오류가 발생했습니다.' });
+    sendEvent({ type: 'error', message: error.message || '오류가 발생했습니다.' });
     res.end();
   }
 });
 
-// Catch-all → serve index.html
+// Catch-all → index.html
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });

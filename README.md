@@ -1,6 +1,6 @@
 # AI 채팅 🤖
 
-Claude API를 활용한 AI 챗봇 웹 애플리케이션입니다.
+Google Gemini API를 활용한 AI 챗봇 웹 애플리케이션입니다.
 
 ## 기능
 
@@ -25,9 +25,14 @@ npm install
 cp .env.example .env
 ```
 
-`.env` 파일을 열고 `ANTHROPIC_API_KEY`에 실제 API 키를 입력하세요.
+`.env` 파일을 열고 `GEMINI_API_KEY`에 실제 API 키를 입력하세요.
 
-API 키는 [Anthropic Console](https://console.anthropic.com/)에서 발급받을 수 있습니다.
+API 키는 [Google AI Studio](https://aistudio.google.com/app/apikey)에서 무료로 발급받을 수 있습니다.
+
+```env
+GEMINI_API_KEY=AIzaSy...
+PORT=3000
+```
 
 ### 3. 서버 실행
 
@@ -62,7 +67,7 @@ ai-chatbot/
 ## 기술 스택
 
 - **백엔드**: Node.js + Express
-- **AI**: Anthropic Claude API (claude-sonnet-4-6)
+- **AI**: Google Gemini API (`gemini-2.0-flash`)
 - **스트리밍**: Server-Sent Events (SSE)
 - **프론트엔드**: Vanilla HTML/CSS/JS
 - **마크다운**: marked.js
