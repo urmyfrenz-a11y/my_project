@@ -42,14 +42,17 @@ app.post('/api/chat', async (req, res) => {
   };
 
   try {
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      systemInstruction:
-        '당신은 친절하고 유능한 AI 어시스턴트입니다. ' +
-        '사용자가 사용하는 언어로 자연스럽게 답변해 주세요. ' +
-        '코드를 작성할 때는 마크다운 코드 블록을 사용하고, ' +
-        '필요시 목록이나 제목 등 마크다운 서식을 활용해 가독성 좋게 답변해 주세요.',
-    });
+    const model = genAI.getGenerativeModel(
+      {
+        model: 'gemini-1.5-flash',
+        systemInstruction:
+          '당신은 친절하고 유능한 AI 어시스턴트입니다. ' +
+          '사용자가 사용하는 언어로 자연스럽게 답변해 주세요. ' +
+          '코드를 작성할 때는 마크다운 코드 블록을 사용하고, ' +
+          '필요시 목록이나 제목 등 마크다운 서식을 활용해 가독성 좋게 답변해 주세요.',
+      },
+      { apiVersion: 'v1' }   // v1beta → v1 (stable)
+    );
 
     // Gemini uses 'user' / 'model' roles (not 'assistant')
     // History = all messages except the last user message
