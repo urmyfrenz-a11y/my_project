@@ -1,22 +1,16 @@
 require('dotenv').config();
 const express = require('express');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Anthropic = require('@anthropic-ai/sdk');
 const path = require('path');
 
 const app = express();
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-const SYSTEM_PROMPT =
-  '당신은 친절하고 유능한 AI 어시스턴트입니다. ' +
-  '사용자가 사용하는 언어로 자연스럽게 답변해 주세요. ' +
-  '코드를 작성할 때는 마크다운 코드 블록을 사용하고, ' +
-  '필요시 목록이나 제목 등 마크다운 서식을 활용해 가독성 좋게 답변해 주세요.';
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', model: 'gemini-1.5-flash' });
+  res.json({ status: 'ok', model: 'claude-sonnet-4-6' });
 });
 
 app.post('/api/chat', async (req, res) => {
@@ -43,33 +37,31 @@ app.post('/api/chat', async (req, res) => {
   const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
   try {
-    // systemInstruction 대신 대화 첫 턴에 시스템 컨텍스트 삽입
-    const history = [
-      { role: 'user',  parts: [{ text: `[지시] ${SYSTEM_PROMPT}` }] },
-      { role: 'model', parts: [{ text: '네, 이해했습니다. 도움을 드리겠습니다.' }] },
-      ...validMessages.slice(0, -1).map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
-      })),
-    ];
+    const stream = client.messages.stream({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 8096,
+      system:
+        '당신은 친절하고 유능한 AI 어시스턴트입니다. ' +
+        '사용자가 사용하는 언어로 자연스럽게 답변해 주세요. ' +
+        '코드를 작성할 때는 마크다운 코드 블록을 사용하고, ' +
+        '필요시 목록이나 제목 등 마크다운 서식을 활용해 가독성 좋게 답변해 주세요.',
+      messages: validMessages,
+    });
 
-    const lastMessage = validMessages[validMessages.length - 1];
+    stream.on('text', (text) => {
+      sendEvent({ type: 'text', content: text });
+    });
 
-    const model = genAI.getGenerativeModel(
-      { model: 'gemini-1.5-flash' },
-      { apiVersion: 'v1' }
-    );
+    stream.on('message', () => {
+      sendEvent({ type: 'done' });
+      res.end();
+    });
 
-    const chat = model.startChat({ history });
-    const result = await chat.sendMessageStream(lastMessage.content);
-
-    for await (const chunk of result.stream) {
-      const text = chunk.text();
-      if (text) sendEvent({ type: 'text', content: text });
-    }
-
-    sendEvent({ type: 'done' });
-    res.end();
+    stream.on('error', (error) => {
+      console.error('[Stream Error]', error.message);
+      sendEvent({ type: 'error', message: '스트리밍 오류가 발생했습니다.' });
+      res.end();
+    });
 
   } catch (error) {
     console.error('[API Error]', error.message);

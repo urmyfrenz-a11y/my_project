@@ -8,7 +8,7 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
+    "@anthropic-ai/sdk": "^0.98.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.2"
   },
