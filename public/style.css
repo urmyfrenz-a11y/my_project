@@ -700,3 +700,51 @@ button { font-family: var(--font); cursor: pointer; }
   font-size: .78rem;
   color: var(--t2);
 }
+
+/* ── 검색 토글 버튼 ──────────────────────────────────────── */
+.search-toggle-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--t3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  transition: color .15s, background .15s;
+  position: relative;
+}
+.search-toggle-btn:hover {
+  color: #16a34a;
+  background: rgba(22,163,74,.08);
+}
+/* 활성화 상태 */
+.search-toggle-btn.active {
+  color: #16a34a;
+  background: rgba(22,163,74,.12);
+}
+.search-toggle-btn.active::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  background: #16a34a;
+  border-radius: 50%;
+  border: 1.5px solid var(--input-bg);
+}
+
+/* 검색 중 표시 */
+.searching-indicator {
+  color: #16a34a;
+  font-size: .9rem;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .4; }
+}

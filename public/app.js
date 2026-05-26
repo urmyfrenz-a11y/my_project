@@ -38,6 +38,9 @@ let isGenerating = false;
 let pdfContext = null;     // 추출된 PDF 텍스트
 let pdfFilename = '';      // 업로드한 파일 이름
 
+// 검색 상태
+let searchEnabled = false;
+
 /* ── DOM ────────────────────────────────────────────────── */
 const messagesArea   = document.getElementById('messagesArea');
 const messageInput   = document.getElementById('messageInput');
@@ -49,6 +52,9 @@ const menuToggle     = document.getElementById('menuToggle');
 const sidebar        = document.getElementById('sidebar');
 const sidebarOverlay = document.getElementById('sidebarOverlay');
 const historyList    = document.getElementById('historyList');
+
+// 검색 관련 DOM
+const searchToggleBtn = document.getElementById('searchToggleBtn');
 
 // PDF 관련 DOM
 const pdfUploadBtn  = document.getElementById('pdfUploadBtn');
@@ -82,7 +88,16 @@ document.querySelectorAll('.chip').forEach(chip =>
   })
 );
 
-// PDF.js worker 설정
+// ── 검색 토글 ────────────────────────────────────────────
+searchToggleBtn.addEventListener('click', () => {
+  searchEnabled = !searchEnabled;
+  searchToggleBtn.classList.toggle('active', searchEnabled);
+  searchToggleBtn.title = searchEnabled
+    ? '구글 검색 켜짐 — 클릭해서 끄기'
+    : '구글 검색으로 답변 — 클릭해서 켜기';
+});
+
+// ── PDF.js worker 설정
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -313,14 +328,18 @@ async function sendMessage() {
   isGenerating = true;
   updateSendBtn();
 
+  // 검색 중이면 "구글 검색 중..." 초기 메시지 표시
   const assistantGroup = appendMessage('assistant', '');
   const bubble = assistantGroup.querySelector('.msg-bubble');
+  if (searchEnabled) {
+    bubble.innerHTML = '<span class="searching-indicator">🔍 구글 검색 중…</span>';
+  }
   let fullText = '';
 
   try {
     const body = { messages: currentMsgs };
-    // PDF 컨텍스트가 있으면 함께 전송
-    if (pdfContext) body.pdfContext = pdfContext;
+    if (pdfContext)    body.pdfContext  = pdfContext;
+    if (searchEnabled) body.useSearch  = true;
 
     const res = await fetch('/api/chat', {
       method: 'POST',
@@ -352,7 +371,11 @@ async function sendMessage() {
 
         try {
           const ev = JSON.parse(raw);
-          if (ev.type === 'text') {
+          if (ev.type === 'search_done') {
+            // 검색 완료 → "검색 중" 표시 제거
+            if (!fullText) bubble.innerHTML =
+              '<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
+          } else if (ev.type === 'text') {
             fullText += ev.content;
             bubble.innerHTML = marked.parse(fullText);
             scrollDown();
