@@ -188,7 +188,7 @@ const CHAPTER_PATTERNS = [
   /^chapter\s+(\d+)\b/i,
   // Numbered: 1. Title  (only first-level, not 1.1)
   /^(\d+)\.\s+(?!\d)[^\s]/,
-  // Part: Part 1, PART I
+  // Part: Part 00, PART 1, PART I
   /^part\s+([IVXLCDM]+|\d+)\b/i,
 ];
 
@@ -204,7 +204,7 @@ async function scanChaptersByText(
   const pdf = await pdfjsLib.getDocument({ data }).promise;
   const total = pdf.numPages;
 
-  // chapterNum -> first occurrence (deduplicates TOC entries and running headers)
+  // chapterNum -> first occurrence on page (deduplicates TOC entries and running headers)
   const chapterByNum = new Map<number, { title: string; startPage: number }>();
 
   for (let pageNum = 1; pageNum <= total; pageNum++) {
@@ -212,16 +212,9 @@ async function scanChaptersByText(
     const page = await pdf.getPage(pageNum);
     const content = await page.getTextContent();
 
-    type TextItem = { str: string; transform: number[]; height: number };
+    type TextItem = { str: string; transform: number[] };
     const items = (content.items as TextItem[]).filter((it) => it.str?.trim());
     if (items.length === 0) continue;
-
-    // Compute median font height for this page (body text size baseline)
-    const heights = items
-      .map((it) => (it.height > 0 ? it.height : Math.abs(it.transform[3])))
-      .filter((h) => h > 0)
-      .sort((a, b) => a - b);
-    const medianH = heights.length > 0 ? heights[Math.floor(heights.length / 2)] : 0;
 
     // If 3+ distinct chapter numbers appear on this page → it's a TOC page, skip
     const chapNumsOnPage = new Set<number>();
@@ -233,18 +226,17 @@ async function scanChaptersByText(
     }
     if (chapNumsOnPage.size >= 3) continue;
 
-    // Find large-font items matching chapter patterns
-    // (large font distinguishes chapter headings from body text / running headers)
+    // Check every text item for chapter patterns.
+    // No font-size filter — rely on TOC-page skip + chapterNum dedup instead.
     for (const item of items) {
       const text = item.str.trim();
-      if (!text) continue;
-      const h = item.height > 0 ? item.height : Math.abs(item.transform[3]);
-      if (medianH > 0 && h < medianH * 1.4) continue; // skip body-text-sized items
+      if (!text || text.length > 120) continue; // skip very long strings (body text)
 
       for (const pat of CHAPTER_PATTERNS) {
         const m = pat.exec(text);
         if (!m) continue;
         const chNum = parseInt(m[1], 10) || 0;
+        // First occurrence of each chapter number wins
         if (!chapterByNum.has(chNum)) {
           chapterByNum.set(chNum, { title: text.slice(0, 80), startPage: pageNum - 1 });
         }
