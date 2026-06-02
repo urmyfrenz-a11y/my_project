@@ -38,37 +38,53 @@ function parseOutlineChapters(doc: PDFDocument): Chapter[] {
     const pageRefMap = new Map<string, number>();
     doc.getPages().forEach((p, i) => pageRefMap.set(p.ref.toString(), i));
 
+    function lookupNamedDest(name: string): number {
+      // Old-style /Catalog/Dests dict
+      const oldDests = doc.catalog.get(PDFName.of("Dests"));
+      if (oldDests) {
+        const resolved = doc.context.lookup(oldDests);
+        if (resolved instanceof PDFDict) {
+          const entry = resolved.get(PDFName.of(name));
+          if (entry) {
+            const arr = doc.context.lookup(entry);
+            if (arr instanceof PDFArray) return resolveDestToPage(arr);
+            if (arr instanceof PDFDict) {
+              const d = arr.get(PDFName.of("D"));
+              if (d) return resolveDestToPage(doc.context.lookup(d) ?? d);
+            }
+          }
+        }
+      }
+      // New-style /Catalog/Names/Dests name tree
+      const namesDict = doc.catalog.get(PDFName.of("Names"));
+      if (namesDict) {
+        const names = doc.context.lookup(namesDict);
+        if (names instanceof PDFDict) {
+          const destsTree = names.get(PDFName.of("Dests"));
+          if (destsTree) {
+            const page = searchNameTree(doc, doc.context.lookup(destsTree), name, pageRefMap);
+            if (page >= 0) return page;
+          }
+        }
+      }
+      return -1;
+    }
+
     function resolveDestToPage(dest: PDFObject): number {
       if (dest instanceof PDFString || dest instanceof PDFHexString) {
-        const name = dest.decodeText();
-        const oldDests = doc.catalog.get(PDFName.of("Dests"));
-        if (oldDests) {
-          const resolved = doc.context.lookup(oldDests);
-          if (resolved instanceof PDFDict) {
-            const entry = resolved.get(PDFName.of(name));
-            if (entry) {
-              const arr = doc.context.lookup(entry);
-              if (arr instanceof PDFArray) return resolveDestToPage(arr);
-            }
-          }
-        }
-        const namesDict = doc.catalog.get(PDFName.of("Names"));
-        if (namesDict) {
-          const names = doc.context.lookup(namesDict);
-          if (names instanceof PDFDict) {
-            const destsTree = names.get(PDFName.of("Dests"));
-            if (destsTree) {
-              const page = searchNameTree(doc, doc.context.lookup(destsTree), name, pageRefMap);
-              if (page >= 0) return page;
-            }
-          }
-        }
-        return -1;
+        return lookupNamedDest(dest.decodeText());
+      }
+      if (dest instanceof PDFName) {
+        return lookupNamedDest(dest.decodeText());
       }
       if (dest instanceof PDFArray && dest.size() > 0) {
         const first = dest.get(0);
         if (first instanceof PDFRef) {
           return pageRefMap.get(first.toString()) ?? -1;
+        }
+        const maybeNum = first as unknown as { asNumber?: () => number };
+        if (typeof maybeNum.asNumber === "function") {
+          return maybeNum.asNumber();
         }
       }
       return -1;
@@ -373,7 +389,7 @@ export default function Home() {
           <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
             <p className="font-semibold text-gray-700 mb-4">분할 방식 선택</p>
 
-            <div className="flex gap-2 mb-5">
+            <div className="flex gap-2 mb-3">
               <button
                 onClick={() => setMode("count")}
                 className={`flex-1 py-2 rounded-xl border-2 font-medium text-sm transition-colors ${
@@ -412,6 +428,12 @@ export default function Home() {
                 )}
               </button>
             </div>
+
+            {chapters.length === 0 && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4">
+                이 PDF에서 북마크(목차)를 찾지 못했습니다. 챕터별 분할은 PDF에 내장 북마크가 있어야 사용할 수 있습니다.
+              </p>
+            )}
 
             {mode === "count" && (
               <div>
