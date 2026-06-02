@@ -26,7 +26,7 @@ interface SplitResult {
   sizeMB: number;
 }
 
-// ── pdf-lib outline parser ─────────────────────────────────────────────
+// ── pdf-lib outline parser ──────────────────────────────────────────────────
 
 function decodeTitle(obj: PDFObject | undefined): string {
   if (!obj) return "";
@@ -178,12 +178,17 @@ function parseOutlineChapters(doc: PDFDocument): Chapter[] {
   }
 }
 
-// ── pdfjs text-based chapter scanner ───────────────────────────────────
+// ── pdfjs text-based chapter scanner ───────────────────────────────────────
 
+// Chapter heading patterns (Korean + English)
 const CHAPTER_PATTERNS = [
+  // Korean: 01장, 1장, 제1장, 제 1 장
   /^제?\s*0*(\d+)\s*장\b/,
+  // English: Chapter 1, CHAPTER 1
   /^chapter\s+(\d+)\b/i,
+  // Numbered: 1. Title  (only first-level, not 1.1)
   /^(\d+)\.\s+(?!\d)[^\s]/,
+  // Part: Part 1, PART I
   /^part\s+([IVXLCDM]+|\d+)\b/i,
 ];
 
@@ -191,8 +196,10 @@ async function scanChaptersByText(
   arrayBuffer: ArrayBuffer,
   onProgress: (cur: number, total: number) => void
 ): Promise<Chapter[]> {
-  const pdfjsLib = await import("pdfjs-dist");
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+  // Load pdfjs-dist from CDN to avoid bundler issues
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdfjsLib = await (Function('return import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs")')() as Promise<any>);
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
 
   const data = new Uint8Array(arrayBuffer);
   const pdf = await pdfjsLib.getDocument({ data }).promise;
@@ -204,26 +211,36 @@ async function scanChaptersByText(
     const page = await pdf.getPage(pageNum);
     const content = await page.getTextContent();
 
+    // Collect text items, group nearby items into lines
     type TextItem = { str: string; transform: number[] };
     const items = (content.items as TextItem[]).filter((it) => it.str.trim());
     if (items.length === 0) continue;
 
+    // Sort by y descending (top of page first), then x ascending
     items.sort((a, b) => {
       const dy = b.transform[5] - a.transform[5];
       return Math.abs(dy) > 2 ? dy : a.transform[4] - b.transform[4];
     });
 
+    // Build first-line text by concatenating items on the same y-band
     const firstY = items[0].transform[5];
     const firstLineItems = items.filter(
       (it) => Math.abs(it.transform[5] - firstY) < 5
     );
     const firstLine = firstLineItems.map((it) => it.str).join(" ").trim();
-    const topText = items.slice(0, 6).map((it) => it.str).join(" ").trim();
+
+    // Also try concatenating first few items for multi-line headings
+    const topText = items
+      .slice(0, 6)
+      .map((it) => it.str)
+      .join(" ")
+      .trim();
 
     for (const candidate of [firstLine, topText]) {
       let matched = false;
       for (const pat of CHAPTER_PATTERNS) {
         if (pat.test(candidate)) {
+          // Use a reasonable title: first line + next line if short
           const title = firstLine || candidate.slice(0, 60);
           chapters.push({ title, startPage: pageNum - 1 });
           matched = true;
@@ -237,7 +254,7 @@ async function scanChaptersByText(
   return chapters;
 }
 
-// ── React component ──────────────────────────────────────────────────
+// ── React component ─────────────────────────────────────────────────────────
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
@@ -250,6 +267,7 @@ export default function Home() {
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  // text scan state
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState<{ cur: number; total: number } | null>(null);
   const [textScanDone, setTextScanDone] = useState(false);
@@ -442,6 +460,7 @@ export default function Home() {
           <p className="text-gray-500">PDF 파일을 페이지 기준으로 손쉽게 분할하세요</p>
         </div>
 
+        {/* Upload */}
         <div
           className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-colors mb-6 ${
             dragging
@@ -484,6 +503,7 @@ export default function Home() {
           )}
         </div>
 
+        {/* Text scan banner (shown when no bookmarks found) */}
         {noBookmarks && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 mb-6">
             <p className="text-sm text-amber-700 font-medium mb-1">
@@ -516,6 +536,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* Options */}
         {file && totalPages && (
           <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
             <p className="font-semibold text-gray-700 mb-4">분할 방식 선택</p>
@@ -636,12 +657,14 @@ export default function Home() {
           </div>
         )}
 
+        {/* Error */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 mb-6 text-sm">
             {error}
           </div>
         )}
 
+        {/* Results */}
         {results.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
