@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   PDFDocument,
   PDFDict,
@@ -16,7 +16,7 @@ type SplitMode = "count" | "size" | "chapter";
 
 interface Chapter {
   title: string;
-  startPage: number;
+  startPage: number; // 0-indexed
 }
 
 interface SplitResult {
@@ -26,116 +26,13 @@ interface SplitResult {
   sizeMB: number;
 }
 
+// ── pdf-lib outline parser ─────────────────────────────────────────────
+
 function decodeTitle(obj: PDFObject | undefined): string {
   if (!obj) return "";
   if (obj instanceof PDFString) return obj.decodeText();
   if (obj instanceof PDFHexString) return obj.decodeText();
   return "";
-}
-
-function parseOutlineChapters(doc: PDFDocument): Chapter[] {
-  try {
-    const pageRefMap = new Map<string, number>();
-    doc.getPages().forEach((p, i) => pageRefMap.set(p.ref.toString(), i));
-
-    function lookupNamedDest(name: string): number {
-      // Old-style /Catalog/Dests dict
-      const oldDests = doc.catalog.get(PDFName.of("Dests"));
-      if (oldDests) {
-        const resolved = doc.context.lookup(oldDests);
-        if (resolved instanceof PDFDict) {
-          const entry = resolved.get(PDFName.of(name));
-          if (entry) {
-            const arr = doc.context.lookup(entry);
-            if (arr instanceof PDFArray) return resolveDestToPage(arr);
-            if (arr instanceof PDFDict) {
-              const d = arr.get(PDFName.of("D"));
-              if (d) return resolveDestToPage(doc.context.lookup(d) ?? d);
-            }
-          }
-        }
-      }
-      // New-style /Catalog/Names/Dests name tree
-      const namesDict = doc.catalog.get(PDFName.of("Names"));
-      if (namesDict) {
-        const names = doc.context.lookup(namesDict);
-        if (names instanceof PDFDict) {
-          const destsTree = names.get(PDFName.of("Dests"));
-          if (destsTree) {
-            const page = searchNameTree(doc, doc.context.lookup(destsTree), name, pageRefMap);
-            if (page >= 0) return page;
-          }
-        }
-      }
-      return -1;
-    }
-
-    function resolveDestToPage(dest: PDFObject): number {
-      if (dest instanceof PDFString || dest instanceof PDFHexString) {
-        return lookupNamedDest(dest.decodeText());
-      }
-      if (dest instanceof PDFName) {
-        return lookupNamedDest(dest.decodeText());
-      }
-      if (dest instanceof PDFArray && dest.size() > 0) {
-        const first = dest.get(0);
-        if (first instanceof PDFRef) {
-          return pageRefMap.get(first.toString()) ?? -1;
-        }
-        const maybeNum = first as unknown as { asNumber?: () => number };
-        if (typeof maybeNum.asNumber === "function") {
-          return maybeNum.asNumber();
-        }
-      }
-      return -1;
-    }
-
-    const outlinesRef = doc.catalog.get(PDFName.of("Outlines"));
-    if (!outlinesRef) return [];
-    const outlines = doc.context.lookup(outlinesRef);
-    if (!(outlines instanceof PDFDict)) return [];
-
-    const firstRef = outlines.get(PDFName.of("First"));
-    if (!firstRef) return [];
-
-    const chapters: Chapter[] = [];
-    let current = doc.context.lookup(firstRef);
-
-    while (current instanceof PDFDict) {
-      const title = decodeTitle(current.get(PDFName.of("Title")));
-      let pageIndex = -1;
-
-      const destObj = current.get(PDFName.of("Dest"));
-      if (destObj) {
-        pageIndex = resolveDestToPage(doc.context.lookup(destObj) ?? destObj);
-      } else {
-        const actionObj = current.get(PDFName.of("A"));
-        if (actionObj) {
-          const action = doc.context.lookup(actionObj);
-          if (action instanceof PDFDict) {
-            const s = action.get(PDFName.of("S"));
-            if (s?.toString() === "/GoTo") {
-              const d = action.get(PDFName.of("D"));
-              if (d) pageIndex = resolveDestToPage(doc.context.lookup(d) ?? d);
-            }
-          }
-        }
-      }
-
-      if (title && pageIndex >= 0) {
-        chapters.push({ title, startPage: pageIndex });
-      }
-
-      const nextRef = current.get(PDFName.of("Next"));
-      if (!nextRef) break;
-      current = doc.context.lookup(nextRef);
-    }
-
-    chapters.sort((a, b) => a.startPage - b.startPage);
-    return chapters.filter((c, i) => i === 0 || c.startPage !== chapters[i - 1].startPage);
-  } catch {
-    return [];
-  }
 }
 
 function searchNameTree(
@@ -151,12 +48,16 @@ function searchNameTree(
     if (arr instanceof PDFArray) {
       for (let i = 0; i < arr.size() - 1; i += 2) {
         const key = arr.get(i);
-        const keyStr = key instanceof PDFString || key instanceof PDFHexString ? key.decodeText() : "";
+        const keyStr =
+          key instanceof PDFString || key instanceof PDFHexString
+            ? key.decodeText()
+            : "";
         if (keyStr === name) {
           const val = doc.context.lookup(arr.get(i + 1));
           if (val instanceof PDFArray && val.size() > 0) {
             const first = val.get(0);
-            if (first instanceof PDFRef) return pageRefMap.get(first.toString()) ?? -1;
+            if (first instanceof PDFRef)
+              return pageRefMap.get(first.toString()) ?? -1;
           }
         }
       }
@@ -167,14 +68,176 @@ function searchNameTree(
     const kids = doc.context.lookup(kidsArr);
     if (kids instanceof PDFArray) {
       for (let i = 0; i < kids.size(); i++) {
-        const kid = doc.context.lookup(kids.get(i));
-        const result = searchNameTree(doc, kid, name, pageRefMap);
+        const result = searchNameTree(
+          doc,
+          doc.context.lookup(kids.get(i)),
+          name,
+          pageRefMap
+        );
         if (result >= 0) return result;
       }
     }
   }
   return -1;
 }
+
+function parseOutlineChapters(doc: PDFDocument): Chapter[] {
+  try {
+    const pageRefMap = new Map<string, number>();
+    doc.getPages().forEach((p, i) => pageRefMap.set(p.ref.toString(), i));
+
+    function lookupNamedDest(name: string): number {
+      const oldDests = doc.catalog.get(PDFName.of("Dests"));
+      if (oldDests) {
+        const resolved = doc.context.lookup(oldDests);
+        if (resolved instanceof PDFDict) {
+          const entry = resolved.get(PDFName.of(name));
+          if (entry) {
+            const arr = doc.context.lookup(entry);
+            if (arr instanceof PDFArray) return resolveDestToPage(arr);
+            if (arr instanceof PDFDict) {
+              const d = arr.get(PDFName.of("D"));
+              if (d) return resolveDestToPage(doc.context.lookup(d) ?? d);
+            }
+          }
+        }
+      }
+      const namesDict = doc.catalog.get(PDFName.of("Names"));
+      if (namesDict) {
+        const names = doc.context.lookup(namesDict);
+        if (names instanceof PDFDict) {
+          const destsTree = names.get(PDFName.of("Dests"));
+          if (destsTree) {
+            const page = searchNameTree(
+              doc,
+              doc.context.lookup(destsTree),
+              name,
+              pageRefMap
+            );
+            if (page >= 0) return page;
+          }
+        }
+      }
+      return -1;
+    }
+
+    function resolveDestToPage(dest: PDFObject): number {
+      if (dest instanceof PDFString || dest instanceof PDFHexString)
+        return lookupNamedDest(dest.decodeText());
+      if (dest instanceof PDFName) return lookupNamedDest(dest.decodeText());
+      if (dest instanceof PDFArray && dest.size() > 0) {
+        const first = dest.get(0);
+        if (first instanceof PDFRef)
+          return pageRefMap.get(first.toString()) ?? -1;
+        const maybeNum = first as unknown as { asNumber?: () => number };
+        if (typeof maybeNum.asNumber === "function") return maybeNum.asNumber();
+      }
+      return -1;
+    }
+
+    const outlinesRef = doc.catalog.get(PDFName.of("Outlines"));
+    if (!outlinesRef) return [];
+    const outlines = doc.context.lookup(outlinesRef);
+    if (!(outlines instanceof PDFDict)) return [];
+    const firstRef = outlines.get(PDFName.of("First"));
+    if (!firstRef) return [];
+
+    const chapters: Chapter[] = [];
+    let current = doc.context.lookup(firstRef);
+    while (current instanceof PDFDict) {
+      const title = decodeTitle(current.get(PDFName.of("Title")));
+      let pageIndex = -1;
+      const destObj = current.get(PDFName.of("Dest"));
+      if (destObj) {
+        pageIndex = resolveDestToPage(doc.context.lookup(destObj) ?? destObj);
+      } else {
+        const actionObj = current.get(PDFName.of("A"));
+        if (actionObj) {
+          const action = doc.context.lookup(actionObj);
+          if (action instanceof PDFDict) {
+            const s = action.get(PDFName.of("S"));
+            if (s?.toString() === "/GoTo") {
+              const d = action.get(PDFName.of("D"));
+              if (d)
+                pageIndex = resolveDestToPage(doc.context.lookup(d) ?? d);
+            }
+          }
+        }
+      }
+      if (title && pageIndex >= 0) chapters.push({ title, startPage: pageIndex });
+      const nextRef = current.get(PDFName.of("Next"));
+      if (!nextRef) break;
+      current = doc.context.lookup(nextRef);
+    }
+    chapters.sort((a, b) => a.startPage - b.startPage);
+    return chapters.filter(
+      (c, i) => i === 0 || c.startPage !== chapters[i - 1].startPage
+    );
+  } catch {
+    return [];
+  }
+}
+
+// ── pdfjs text-based chapter scanner ───────────────────────────────────
+
+const CHAPTER_PATTERNS = [
+  /^제?\s*0*(\d+)\s*장\b/,
+  /^chapter\s+(\d+)\b/i,
+  /^(\d+)\.\s+(?!\d)[^\s]/,
+  /^part\s+([IVXLCDM]+|\d+)\b/i,
+];
+
+async function scanChaptersByText(
+  arrayBuffer: ArrayBuffer,
+  onProgress: (cur: number, total: number) => void
+): Promise<Chapter[]> {
+  const pdfjsLib = await import("pdfjs-dist");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
+  const data = new Uint8Array(arrayBuffer);
+  const pdf = await pdfjsLib.getDocument({ data }).promise;
+  const total = pdf.numPages;
+  const chapters: Chapter[] = [];
+
+  for (let pageNum = 1; pageNum <= total; pageNum++) {
+    onProgress(pageNum, total);
+    const page = await pdf.getPage(pageNum);
+    const content = await page.getTextContent();
+
+    type TextItem = { str: string; transform: number[] };
+    const items = (content.items as TextItem[]).filter((it) => it.str.trim());
+    if (items.length === 0) continue;
+
+    items.sort((a, b) => {
+      const dy = b.transform[5] - a.transform[5];
+      return Math.abs(dy) > 2 ? dy : a.transform[4] - b.transform[4];
+    });
+
+    const firstY = items[0].transform[5];
+    const firstLineItems = items.filter(
+      (it) => Math.abs(it.transform[5] - firstY) < 5
+    );
+    const firstLine = firstLineItems.map((it) => it.str).join(" ").trim();
+    const topText = items.slice(0, 6).map((it) => it.str).join(" ").trim();
+
+    for (const candidate of [firstLine, topText]) {
+      let matched = false;
+      for (const pat of CHAPTER_PATTERNS) {
+        if (pat.test(candidate)) {
+          const title = firstLine || candidate.slice(0, 60);
+          chapters.push({ title, startPage: pageNum - 1 });
+          matched = true;
+          break;
+        }
+      }
+      if (matched) break;
+    }
+  }
+
+  return chapters;
+}
+
+// ── React component ──────────────────────────────────────────────────
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
@@ -187,14 +250,21 @@ export default function Home() {
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<{ cur: number; total: number } | null>(null);
+  const [textScanDone, setTextScanDone] = useState(false);
+  const rawBufRef = useRef<ArrayBuffer | null>(null);
 
   const loadFile = async (f: File) => {
     setFile(f);
     setResults([]);
     setError("");
     setChapters([]);
+    setTextScanDone(false);
+    setScanProgress(null);
     try {
       const buf = await f.arrayBuffer();
+      rawBufRef.current = buf;
       const pdf = await PDFDocument.load(buf);
       setTotalPages(pdf.getPageCount());
       const detected = parseOutlineChapters(pdf);
@@ -218,6 +288,32 @@ export default function Home() {
     else setError("PDF 파일만 업로드할 수 있습니다.");
   }, []);
 
+  const startTextScan = async () => {
+    if (!rawBufRef.current) return;
+    setScanning(true);
+    setScanProgress({ cur: 0, total: totalPages ?? 0 });
+    setError("");
+    try {
+      const found = await scanChaptersByText(rawBufRef.current, (cur, total) => {
+        setScanProgress({ cur, total });
+      });
+      if (found.length === 0) {
+        setError(
+          "텍스트 스캔으로도 챕터를 찾지 못했습니다. 이 PDF는 챕터 제목이 이미지로 삽입되어 있거나 지원하지 않는 형식일 수 있습니다."
+        );
+      } else {
+        setChapters(found);
+        setMode("chapter");
+      }
+      setTextScanDone(true);
+    } catch (e) {
+      setError("텍스트 스캔 중 오류: " + (e as Error).message);
+    } finally {
+      setScanning(false);
+      setScanProgress(null);
+    }
+  };
+
   const split = async () => {
     if (!file || !totalPages) return;
     setLoading(true);
@@ -225,10 +321,9 @@ export default function Home() {
     setResults([]);
 
     try {
-      const buf = await file.arrayBuffer();
+      const buf = rawBufRef.current ?? (await file.arrayBuffer());
       const srcPdf = await PDFDocument.load(buf);
       const pageCount = srcPdf.getPageCount();
-
       let chunks: { pages: number[]; label: string }[] = [];
 
       if (mode === "count") {
@@ -269,13 +364,14 @@ export default function Home() {
           chunks.push({ pages: currentPages, label: `part${partIndex}` });
       } else {
         if (chapters.length === 0) {
-          setError("이 PDF에서 목차(북마크)를 찾을 수 없습니다.");
+          setError("챕터 정보가 없습니다.");
           setLoading(false);
           return;
         }
         for (let i = 0; i < chapters.length; i++) {
           const start = chapters[i].startPage;
-          const end = i + 1 < chapters.length ? chapters[i + 1].startPage - 1 : pageCount - 1;
+          const end =
+            i + 1 < chapters.length ? chapters[i + 1].startPage - 1 : pageCount - 1;
           chunks.push({
             pages: Array.from({ length: end - start + 1 }, (_, j) => start + j),
             label: `ch${i + 1}`,
@@ -296,7 +392,9 @@ export default function Home() {
         newResults.push({
           name:
             mode === "chapter"
-              ? `${file.name.replace(/\.pdf$/i, "")}_${label}_${chapters[i].title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 40)}.pdf`
+              ? `${file.name.replace(/\.pdf$/i, "")}_${label}_${chapters[i].title
+                  .replace(/[\\/:*?"<>|]/g, "_")
+                  .slice(0, 40)}.pdf`
               : `${file.name.replace(/\.pdf$/i, "")}_${label}.pdf`,
           blob,
           pages: start === end ? `${start}` : `${start}–${end}`,
@@ -315,7 +413,6 @@ export default function Home() {
         setLoading(false);
         return;
       }
-
       setResults(newResults);
     } catch (e) {
       setError("PDF 분할 중 오류가 발생했습니다: " + (e as Error).message);
@@ -334,6 +431,8 @@ export default function Home() {
       URL.revokeObjectURL(url);
     });
   };
+
+  const noBookmarks = file && totalPages && chapters.length === 0 && !textScanDone;
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
@@ -369,7 +468,7 @@ export default function Home() {
                 {(file.size / 1024 / 1024).toFixed(2)} MB
                 {chapters.length > 0 && (
                   <span className="ml-2 text-emerald-500 font-medium">
-                    · 목차 {chapters.length}개 감지됨
+                    · 챕터 {chapters.length}개 감지됨
                   </span>
                 )}
               </p>
@@ -384,6 +483,38 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {noBookmarks && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 mb-6">
+            <p className="text-sm text-amber-700 font-medium mb-1">
+              내장 북마크를 찾지 못했습니다
+            </p>
+            <p className="text-xs text-amber-600 mb-3">
+              PDF의 각 페이지에서 &quot;1장&quot;, &quot;제2장&quot;, &quot;Chapter 3&quot; 같은 텍스트를 직접 스캔하여 챕터를 감지할 수 있습니다. 페이지 수에 따라 다소 시간이 걸릴 수 있습니다.
+            </p>
+            {scanning && scanProgress ? (
+              <div>
+                <div className="flex justify-between text-xs text-amber-600 mb-1">
+                  <span>페이지 스캔 중…</span>
+                  <span>{scanProgress.cur} / {scanProgress.total}</span>
+                </div>
+                <div className="h-2 bg-amber-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-amber-400 transition-all"
+                    style={{ width: `${(scanProgress.cur / scanProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={startTextScan}
+                className="bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"
+              >
+                텍스트로 챕터 자동 감지
+              </button>
+            )}
+          </div>
+        )}
 
         {file && totalPages && (
           <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
@@ -413,7 +544,6 @@ export default function Home() {
               <button
                 onClick={() => setMode("chapter")}
                 disabled={chapters.length === 0}
-                title={chapters.length === 0 ? "이 PDF에 목차(북마크)가 없습니다" : undefined}
                 className={`flex-1 py-2 rounded-xl border-2 font-medium text-sm transition-colors ${
                   mode === "chapter"
                     ? "border-emerald-500 bg-emerald-50 text-emerald-700"
@@ -428,12 +558,6 @@ export default function Home() {
                 )}
               </button>
             </div>
-
-            {chapters.length === 0 && (
-              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4">
-                이 PDF에서 북마크(목차)를 찾지 못했습니다. 챕터별 분할은 PDF에 내장 북마크가 있어야 사용할 수 있습니다.
-              </p>
-            )}
 
             {mode === "count" && (
               <div>
@@ -457,9 +581,7 @@ export default function Home() {
 
             {mode === "size" && (
               <div>
-                <label className="block text-sm text-gray-600 mb-2">
-                  파일당 최대 크기 (MB)
-                </label>
+                <label className="block text-sm text-gray-600 mb-2">파일당 최대 크기 (MB)</label>
                 <input
                   type="number"
                   min={0.1}
@@ -477,7 +599,7 @@ export default function Home() {
             {mode === "chapter" && chapters.length > 0 && (
               <div>
                 <p className="text-sm text-gray-600 mb-2">
-                  감지된 목차 — 각 챕터가 별도 파일로 분할됩니다
+                  감지된 챕터 — 각 챕터가 별도 파일로 분할됩니다
                 </p>
                 <ul className="max-h-52 overflow-y-auto space-y-1 border border-gray-100 rounded-xl p-3 bg-gray-50">
                   {chapters.map((c, i) => (
@@ -488,14 +610,14 @@ export default function Home() {
                       <span className="text-gray-700 flex-1 truncate" title={c.title}>
                         {c.title}
                       </span>
-                      <span className="text-gray-400 text-xs shrink-0">
-                        p.{c.startPage + 1}
-                      </span>
+                      <span className="text-gray-400 text-xs shrink-0">p.{c.startPage + 1}</span>
                     </li>
                   ))}
                 </ul>
                 <p className="text-xs text-gray-400 mt-2">
-                  PDF에 내장된 1수준 북마크(목차) 기준으로 분할합니다.
+                  {textScanDone
+                    ? "페이지 텍스트 스캔으로 감지된 챕터 기준으로 분할합니다."
+                    : "PDF 내장 북마크 기준으로 분할합니다."}
                 </p>
               </div>
             )}
@@ -533,10 +655,7 @@ export default function Home() {
             </div>
             <ul className="space-y-2">
               {results.map((r, i) => (
-                <li
-                  key={i}
-                  className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3"
-                >
+                <li key={i} className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
                   <div className="min-w-0 flex-1 mr-4">
                     <p className="text-sm font-medium text-gray-700 truncate" title={r.name}>
                       {r.name}
