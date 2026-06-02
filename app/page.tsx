@@ -12,7 +12,12 @@ import {
   PDFObject,
 } from "pdf-lib";
 
-type SplitMode = "count" | "size" | "chapter";
+type SplitMode = "count" | "size" | "chapter" | "range";
+
+interface PageRange {
+  from: number;
+  to: number;
+}
 
 interface Chapter {
   title: string;
@@ -180,15 +185,10 @@ function parseOutlineChapters(doc: PDFDocument): Chapter[] {
 
 // ── pdfjs text-based chapter scanner ───────────────────────────────────────
 
-// Chapter heading patterns (Korean + English)
 const CHAPTER_PATTERNS = [
-  // Korean: 01장, 1장, 제1장, 제 1 장
   /^제?\s*0*(\d+)\s*장\b/,
-  // English: Chapter 1, CHAPTER 1
   /^chapter\s+(\d+)\b/i,
-  // Numbered: 1. Title  (only first-level, not 1.1)
   /^(\d+)\.\s+(?!\d)[^\s]/,
-  // Part: Part 1, PART I
   /^part\s+([IVXLCDM]+|\d+)\b/i,
 ];
 
@@ -196,7 +196,6 @@ async function scanChaptersByText(
   arrayBuffer: ArrayBuffer,
   onProgress: (cur: number, total: number) => void
 ): Promise<Chapter[]> {
-  // Load pdfjs-dist from CDN to avoid bundler issues
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pdfjsLib = await (Function('return import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs")')() as Promise<any>);
   pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
@@ -205,8 +204,6 @@ async function scanChaptersByText(
   const pdf = await pdfjsLib.getDocument({ data }).promise;
   const total = pdf.numPages;
 
-  // chapterKey (raw matched string, e.g. "01", "I", "1") -> first occurrence
-  // Using raw string avoids parseInt("I") = NaN collisions with numeric keys
   const chapterByKey = new Map<string, { title: string; startPage: number }>();
 
   for (let pageNum = 1; pageNum <= total; pageNum++) {
@@ -218,7 +215,6 @@ async function scanChaptersByText(
     const items = (content.items as TextItem[]).filter((it) => it.str?.trim());
     if (items.length === 0) continue;
 
-    // If 2+ distinct chapter keys appear on this page → likely a TOC page, skip
     const chapterKeysOnPage = new Set<string>();
     for (const item of items) {
       for (const pat of CHAPTER_PATTERNS) {
@@ -228,7 +224,6 @@ async function scanChaptersByText(
     }
     if (chapterKeysOnPage.size >= 2) continue;
 
-    // Find chapter heading on this page (no font-size filter)
     for (const item of items) {
       const text = item.str.trim();
       if (!text || text.length > 120) continue;
@@ -247,8 +242,6 @@ async function scanChaptersByText(
 
   const candidates = Array.from(chapterByKey.values()).sort((a, b) => a.startPage - b.startPage);
 
-  // If all chapters are crammed into a small fraction of the book (e.g., first 5%)
-  // they were likely picked up from a multi-page TOC — return empty
   if (candidates.length >= 2) {
     const span = candidates[candidates.length - 1].startPage - candidates[0].startPage;
     if (span < Math.max(5, total * 0.05)) return [];
@@ -270,10 +263,10 @@ export default function Home() {
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const [chapters, setChapters] = useState<Chapter[]>([]);
-  // text scan state
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState<{ cur: number; total: number } | null>(null);
   const [textScanDone, setTextScanDone] = useState(false);
+  const [ranges, setRanges] = useState<PageRange[]>([{ from: 1, to: 1 }]);
   const rawBufRef = useRef<ArrayBuffer | null>(null);
 
   const loadFile = async (f: File) => {
@@ -283,11 +276,14 @@ export default function Home() {
     setChapters([]);
     setTextScanDone(false);
     setScanProgress(null);
+    setRanges([{ from: 1, to: 1 }]);
     try {
       const buf = await f.arrayBuffer();
       rawBufRef.current = buf;
       const pdf = await PDFDocument.load(buf);
-      setTotalPages(pdf.getPageCount());
+      const pages = pdf.getPageCount();
+      setTotalPages(pages);
+      setRanges([{ from: 1, to: pages }]);
       const detected = parseOutlineChapters(pdf);
       setChapters(detected);
     } catch {
@@ -383,6 +379,20 @@ export default function Home() {
         }
         if (currentPages.length > 0)
           chunks.push({ pages: currentPages, label: `part${partIndex}` });
+      } else if (mode === "range") {
+        for (let i = 0; i < ranges.length; i++) {
+          const from = ranges[i].from - 1;
+          const to = ranges[i].to - 1;
+          if (from < 0 || to >= pageCount || from > to) {
+            setError(`범위 ${i + 1}: 유효하지 않은 페이지 범위입니다. (1–${pageCount})`);
+            setLoading(false);
+            return;
+          }
+          chunks.push({
+            pages: Array.from({ length: to - from + 1 }, (_, j) => from + j),
+            label: `part${i + 1}`,
+          });
+        }
       } else {
         if (chapters.length === 0) {
           setError("챕터 정보가 없습니다.");
@@ -423,16 +433,18 @@ export default function Home() {
         });
       }
 
-      const totalSplit = newResults.reduce((sum, r) => {
-        const [a, b] = r.pages.includes("–")
-          ? r.pages.split("–").map(Number)
-          : [Number(r.pages), Number(r.pages)];
-        return sum + (b - a + 1);
-      }, 0);
-      if (totalSplit !== pageCount) {
-        setError("분할 중 오류가 발생했습니다. 페이지 수가 맞지 않습니다.");
-        setLoading(false);
-        return;
+      if (mode !== "range") {
+        const totalSplit = newResults.reduce((sum, r) => {
+          const [a, b] = r.pages.includes("–")
+            ? r.pages.split("–").map(Number)
+            : [Number(r.pages), Number(r.pages)];
+          return sum + (b - a + 1);
+        }, 0);
+        if (totalSplit !== pageCount) {
+          setError("분할 중 오류가 발생했습니다. 페이지 수가 맞지 않습니다.");
+          setLoading(false);
+          return;
+        }
       }
       setResults(newResults);
     } catch (e) {
@@ -506,14 +518,14 @@ export default function Home() {
           )}
         </div>
 
-        {/* Text scan banner (shown when no bookmarks found) */}
+        {/* Text scan banner */}
         {noBookmarks && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 mb-6">
             <p className="text-sm text-amber-700 font-medium mb-1">
               내장 북마크를 찾지 못했습니다
             </p>
             <p className="text-xs text-amber-600 mb-3">
-              PDF의 각 페이지에서 &quot;1장&quot;, &quot;제2장&quot;, &quot;Chapter 3&quot; 같은 텍스트를 직접 스캔하여 챕터를 감지할 수 있습니다. 페이지 수에 따라 다소 시간이 걸릴 수 있습니다.
+              PDF의 각 페이지에서 &quot;1장&quot;, &quot;제2장&quot;, &quot;Chapter 3&quot; 같은 텍스트를 직접 스캔하여 챕터를 감지할 수 있습니다.
             </p>
             {scanning && scanProgress ? (
               <div>
@@ -544,10 +556,10 @@ export default function Home() {
           <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
             <p className="font-semibold text-gray-700 mb-4">분할 방식 선택</p>
 
-            <div className="flex gap-2 mb-3">
+            <div className="grid grid-cols-2 gap-2 mb-3">
               <button
                 onClick={() => setMode("count")}
-                className={`flex-1 py-2 rounded-xl border-2 font-medium text-sm transition-colors ${
+                className={`py-2 rounded-xl border-2 font-medium text-sm transition-colors ${
                   mode === "count"
                     ? "border-indigo-500 bg-indigo-50 text-indigo-700"
                     : "border-gray-200 text-gray-500 hover:border-indigo-300"
@@ -557,7 +569,7 @@ export default function Home() {
               </button>
               <button
                 onClick={() => setMode("size")}
-                className={`flex-1 py-2 rounded-xl border-2 font-medium text-sm transition-colors ${
+                className={`py-2 rounded-xl border-2 font-medium text-sm transition-colors ${
                   mode === "size"
                     ? "border-indigo-500 bg-indigo-50 text-indigo-700"
                     : "border-gray-200 text-gray-500 hover:border-indigo-300"
@@ -566,9 +578,19 @@ export default function Home() {
                 최대 파일 크기
               </button>
               <button
+                onClick={() => setMode("range")}
+                className={`py-2 rounded-xl border-2 font-medium text-sm transition-colors ${
+                  mode === "range"
+                    ? "border-violet-500 bg-violet-50 text-violet-700"
+                    : "border-gray-200 text-gray-500 hover:border-violet-300"
+                }`}
+              >
+                페이지 범위 직접 지정
+              </button>
+              <button
                 onClick={() => setMode("chapter")}
                 disabled={chapters.length === 0}
-                className={`flex-1 py-2 rounded-xl border-2 font-medium text-sm transition-colors ${
+                className={`py-2 rounded-xl border-2 font-medium text-sm transition-colors ${
                   mode === "chapter"
                     ? "border-emerald-500 bg-emerald-50 text-emerald-700"
                     : chapters.length > 0
@@ -598,7 +620,7 @@ export default function Home() {
                   className="w-full border border-gray-200 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 />
                 <p className="text-xs text-gray-400 mt-2">
-                  페이지를 최대한 균등하게 나눕니다. 나머지 페이지는 앞 파일에 배분됩니다.
+                  페이지를 최대한 균등하게 나눕니다.
                 </p>
               </div>
             )}
@@ -617,6 +639,61 @@ export default function Home() {
                 <p className="text-xs text-gray-400 mt-2">
                   각 파일이 지정한 크기를 초과하지 않도록 페이지 단위로 분할합니다.
                 </p>
+              </div>
+            )}
+
+            {mode === "range" && (
+              <div>
+                <p className="text-sm text-gray-600 mb-3">
+                  분할할 페이지 범위를 입력하세요{" "}
+                  <span className="text-gray-400">(총 {totalPages}페이지)</span>
+                </p>
+                <div className="space-y-2">
+                  {ranges.map((r, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="text-gray-400 text-sm w-14 shrink-0">파일 {i + 1}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={totalPages ?? 1}
+                        value={r.from}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setRanges((prev) => prev.map((x, j) => j === i ? { ...x, from: v } : x));
+                        }}
+                        className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-violet-300"
+                      />
+                      <span className="text-gray-400 text-sm">–</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={totalPages ?? 1}
+                        value={r.to}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setRanges((prev) => prev.map((x, j) => j === i ? { ...x, to: v } : x));
+                        }}
+                        className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-violet-300"
+                      />
+                      <span className="text-gray-400 text-xs">페이지</span>
+                      {ranges.length > 1 && (
+                        <button
+                          onClick={() => setRanges((prev) => prev.filter((_, j) => j !== i))}
+                          className="ml-auto text-gray-300 hover:text-red-400 transition-colors text-xl leading-none px-1"
+                          title="삭제"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setRanges((prev) => [...prev, { from: 1, to: totalPages ?? 1 }])}
+                  className="mt-3 w-full py-2 border-2 border-dashed border-violet-200 text-violet-500 hover:border-violet-400 hover:text-violet-600 rounded-xl text-sm font-medium transition-colors"
+                >
+                  + 범위 추가
+                </button>
               </div>
             )}
 
@@ -652,6 +729,8 @@ export default function Home() {
               className={`mt-5 w-full disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition-colors ${
                 mode === "chapter"
                   ? "bg-emerald-600 hover:bg-emerald-700"
+                  : mode === "range"
+                  ? "bg-violet-600 hover:bg-violet-700"
                   : "bg-indigo-600 hover:bg-indigo-700"
               }`}
             >
