@@ -196,7 +196,6 @@ async function scanChaptersByText(
   arrayBuffer: ArrayBuffer,
   onProgress: (cur: number, total: number) => void
 ): Promise<Chapter[]> {
-  // Load pdfjs-dist from CDN to avoid bundler issues
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pdfjsLib = await (Function('return import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs")')() as Promise<any>);
   pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
@@ -204,54 +203,57 @@ async function scanChaptersByText(
   const data = new Uint8Array(arrayBuffer);
   const pdf = await pdfjsLib.getDocument({ data }).promise;
   const total = pdf.numPages;
-  const chapters: Chapter[] = [];
+
+  // chapterNum -> first occurrence (deduplicates TOC entries and running headers)
+  const chapterByNum = new Map<number, { title: string; startPage: number }>();
 
   for (let pageNum = 1; pageNum <= total; pageNum++) {
     onProgress(pageNum, total);
     const page = await pdf.getPage(pageNum);
     const content = await page.getTextContent();
 
-    // Collect text items, group nearby items into lines
-    type TextItem = { str: string; transform: number[] };
-    const items = (content.items as TextItem[]).filter((it) => it.str.trim());
+    type TextItem = { str: string; transform: number[]; height: number };
+    const items = (content.items as TextItem[]).filter((it) => it.str?.trim());
     if (items.length === 0) continue;
 
-    // Sort by y descending (top of page first), then x ascending
-    items.sort((a, b) => {
-      const dy = b.transform[5] - a.transform[5];
-      return Math.abs(dy) > 2 ? dy : a.transform[4] - b.transform[4];
-    });
+    // Compute median font height for this page (body text size baseline)
+    const heights = items
+      .map((it) => (it.height > 0 ? it.height : Math.abs(it.transform[3])))
+      .filter((h) => h > 0)
+      .sort((a, b) => a - b);
+    const medianH = heights.length > 0 ? heights[Math.floor(heights.length / 2)] : 0;
 
-    // Build first-line text by concatenating items on the same y-band
-    const firstY = items[0].transform[5];
-    const firstLineItems = items.filter(
-      (it) => Math.abs(it.transform[5] - firstY) < 5
-    );
-    const firstLine = firstLineItems.map((it) => it.str).join(" ").trim();
-
-    // Also try concatenating first few items for multi-line headings
-    const topText = items
-      .slice(0, 6)
-      .map((it) => it.str)
-      .join(" ")
-      .trim();
-
-    for (const candidate of [firstLine, topText]) {
-      let matched = false;
+    // If 3+ distinct chapter numbers appear on this page → it's a TOC page, skip
+    const chapNumsOnPage = new Set<number>();
+    for (const item of items) {
       for (const pat of CHAPTER_PATTERNS) {
-        if (pat.test(candidate)) {
-          // Use a reasonable title: first line + next line if short
-          const title = firstLine || candidate.slice(0, 60);
-          chapters.push({ title, startPage: pageNum - 1 });
-          matched = true;
-          break;
-        }
+        const m = pat.exec(item.str.trim());
+        if (m) { chapNumsOnPage.add(parseInt(m[1], 10) || 0); break; }
       }
-      if (matched) break;
+    }
+    if (chapNumsOnPage.size >= 3) continue;
+
+    // Find large-font items matching chapter patterns
+    // (large font distinguishes chapter headings from body text / running headers)
+    for (const item of items) {
+      const text = item.str.trim();
+      if (!text) continue;
+      const h = item.height > 0 ? item.height : Math.abs(item.transform[3]);
+      if (medianH > 0 && h < medianH * 1.4) continue; // skip body-text-sized items
+
+      for (const pat of CHAPTER_PATTERNS) {
+        const m = pat.exec(text);
+        if (!m) continue;
+        const chNum = parseInt(m[1], 10) || 0;
+        if (!chapterByNum.has(chNum)) {
+          chapterByNum.set(chNum, { title: text.slice(0, 80), startPage: pageNum - 1 });
+        }
+        break;
+      }
     }
   }
 
-  return chapters;
+  return Array.from(chapterByNum.values()).sort((a, b) => a.startPage - b.startPage);
 }
 
 // ── React component ─────────────────────────────────────────────────────────
