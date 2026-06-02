@@ -1,15 +1,163 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { PDFDocument } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFDict,
+  PDFArray,
+  PDFName,
+  PDFRef,
+  PDFString,
+  PDFHexString,
+  PDFObject,
+} from "pdf-lib";
 
-type SplitMode = "count" | "size";
+type SplitMode = "count" | "size" | "chapter";
+
+interface Chapter {
+  title: string;
+  startPage: number;
+}
 
 interface SplitResult {
   name: string;
   blob: Blob;
   pages: string;
   sizeMB: number;
+}
+
+function decodeTitle(obj: PDFObject | undefined): string {
+  if (!obj) return "";
+  if (obj instanceof PDFString) return obj.decodeText();
+  if (obj instanceof PDFHexString) return obj.decodeText();
+  return "";
+}
+
+function parseOutlineChapters(doc: PDFDocument): Chapter[] {
+  try {
+    const pageRefMap = new Map<string, number>();
+    doc.getPages().forEach((p, i) => pageRefMap.set(p.ref.toString(), i));
+
+    function resolveDestToPage(dest: PDFObject): number {
+      if (dest instanceof PDFString || dest instanceof PDFHexString) {
+        const name = dest.decodeText();
+        const oldDests = doc.catalog.get(PDFName.of("Dests"));
+        if (oldDests) {
+          const resolved = doc.context.lookup(oldDests);
+          if (resolved instanceof PDFDict) {
+            const entry = resolved.get(PDFName.of(name));
+            if (entry) {
+              const arr = doc.context.lookup(entry);
+              if (arr instanceof PDFArray) return resolveDestToPage(arr);
+            }
+          }
+        }
+        const namesDict = doc.catalog.get(PDFName.of("Names"));
+        if (namesDict) {
+          const names = doc.context.lookup(namesDict);
+          if (names instanceof PDFDict) {
+            const destsTree = names.get(PDFName.of("Dests"));
+            if (destsTree) {
+              const page = searchNameTree(doc, doc.context.lookup(destsTree), name, pageRefMap);
+              if (page >= 0) return page;
+            }
+          }
+        }
+        return -1;
+      }
+      if (dest instanceof PDFArray && dest.size() > 0) {
+        const first = dest.get(0);
+        if (first instanceof PDFRef) {
+          return pageRefMap.get(first.toString()) ?? -1;
+        }
+      }
+      return -1;
+    }
+
+    const outlinesRef = doc.catalog.get(PDFName.of("Outlines"));
+    if (!outlinesRef) return [];
+    const outlines = doc.context.lookup(outlinesRef);
+    if (!(outlines instanceof PDFDict)) return [];
+
+    const firstRef = outlines.get(PDFName.of("First"));
+    if (!firstRef) return [];
+
+    const chapters: Chapter[] = [];
+    let current = doc.context.lookup(firstRef);
+
+    while (current instanceof PDFDict) {
+      const title = decodeTitle(current.get(PDFName.of("Title")));
+      let pageIndex = -1;
+
+      const destObj = current.get(PDFName.of("Dest"));
+      if (destObj) {
+        pageIndex = resolveDestToPage(doc.context.lookup(destObj) ?? destObj);
+      } else {
+        const actionObj = current.get(PDFName.of("A"));
+        if (actionObj) {
+          const action = doc.context.lookup(actionObj);
+          if (action instanceof PDFDict) {
+            const s = action.get(PDFName.of("S"));
+            if (s?.toString() === "/GoTo") {
+              const d = action.get(PDFName.of("D"));
+              if (d) pageIndex = resolveDestToPage(doc.context.lookup(d) ?? d);
+            }
+          }
+        }
+      }
+
+      if (title && pageIndex >= 0) {
+        chapters.push({ title, startPage: pageIndex });
+      }
+
+      const nextRef = current.get(PDFName.of("Next"));
+      if (!nextRef) break;
+      current = doc.context.lookup(nextRef);
+    }
+
+    chapters.sort((a, b) => a.startPage - b.startPage);
+    return chapters.filter((c, i) => i === 0 || c.startPage !== chapters[i - 1].startPage);
+  } catch {
+    return [];
+  }
+}
+
+function searchNameTree(
+  doc: PDFDocument,
+  node: PDFObject | undefined,
+  name: string,
+  pageRefMap: Map<string, number>
+): number {
+  if (!(node instanceof PDFDict)) return -1;
+  const namesArr = node.get(PDFName.of("Names"));
+  if (namesArr) {
+    const arr = doc.context.lookup(namesArr);
+    if (arr instanceof PDFArray) {
+      for (let i = 0; i < arr.size() - 1; i += 2) {
+        const key = arr.get(i);
+        const keyStr = key instanceof PDFString || key instanceof PDFHexString ? key.decodeText() : "";
+        if (keyStr === name) {
+          const val = doc.context.lookup(arr.get(i + 1));
+          if (val instanceof PDFArray && val.size() > 0) {
+            const first = val.get(0);
+            if (first instanceof PDFRef) return pageRefMap.get(first.toString()) ?? -1;
+          }
+        }
+      }
+    }
+  }
+  const kidsArr = node.get(PDFName.of("Kids"));
+  if (kidsArr) {
+    const kids = doc.context.lookup(kidsArr);
+    if (kids instanceof PDFArray) {
+      for (let i = 0; i < kids.size(); i++) {
+        const kid = doc.context.lookup(kids.get(i));
+        const result = searchNameTree(doc, kid, name, pageRefMap);
+        if (result >= 0) return result;
+      }
+    }
+  }
+  return -1;
 }
 
 export default function Home() {
@@ -22,15 +170,19 @@ export default function Home() {
   const [error, setError] = useState<string>("");
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
 
   const loadFile = async (f: File) => {
     setFile(f);
     setResults([]);
     setError("");
+    setChapters([]);
     try {
       const buf = await f.arrayBuffer();
       const pdf = await PDFDocument.load(buf);
       setTotalPages(pdf.getPageCount());
+      const detected = parseOutlineChapters(pdf);
+      setChapters(detected);
     } catch {
       setError("PDF 파일을 읽을 수 없습니다.");
       setTotalPages(null);
@@ -61,7 +213,7 @@ export default function Home() {
       const srcPdf = await PDFDocument.load(buf);
       const pageCount = srcPdf.getPageCount();
 
-      let chunks: number[][] = [];
+      let chunks: { pages: number[]; label: string }[] = [];
 
       if (mode === "count") {
         if (splitCount < 2 || splitCount > pageCount) {
@@ -75,39 +227,61 @@ export default function Home() {
         for (let i = 0; i < splitCount; i++) {
           const len = base + (i < extra ? 1 : 0);
           if (len > 0) {
-            chunks.push(Array.from({ length: len }, (_, j) => cur + j));
+            chunks.push({
+              pages: Array.from({ length: len }, (_, j) => cur + j),
+              label: `part${i + 1}`,
+            });
             cur += len;
           }
         }
-      } else {
+      } else if (mode === "size") {
         const maxBytes = maxSizeMB * 1024 * 1024;
-        let currentChunk: number[] = [];
+        let currentPages: number[] = [];
+        let partIndex = 1;
         for (let i = 0; i < pageCount; i++) {
-          currentChunk.push(i);
+          currentPages.push(i);
           const testDoc = await PDFDocument.create();
-          const pages = await testDoc.copyPages(srcPdf, currentChunk);
+          const pages = await testDoc.copyPages(srcPdf, currentPages);
           pages.forEach((p) => testDoc.addPage(p));
           const testBytes = await testDoc.save();
-          if (testBytes.length > maxBytes && currentChunk.length > 1) {
-            chunks.push(currentChunk.slice(0, -1));
-            currentChunk = [i];
+          if (testBytes.length > maxBytes && currentPages.length > 1) {
+            chunks.push({ pages: currentPages.slice(0, -1), label: `part${partIndex++}` });
+            currentPages = [i];
           }
         }
-        if (currentChunk.length > 0) chunks.push(currentChunk);
+        if (currentPages.length > 0)
+          chunks.push({ pages: currentPages, label: `part${partIndex}` });
+      } else {
+        if (chapters.length === 0) {
+          setError("이 PDF에서 목차(북마크)를 찾을 수 없습니다.");
+          setLoading(false);
+          return;
+        }
+        for (let i = 0; i < chapters.length; i++) {
+          const start = chapters[i].startPage;
+          const end = i + 1 < chapters.length ? chapters[i + 1].startPage - 1 : pageCount - 1;
+          chunks.push({
+            pages: Array.from({ length: end - start + 1 }, (_, j) => start + j),
+            label: `ch${i + 1}`,
+          });
+        }
       }
 
       const newResults: SplitResult[] = [];
       for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
+        const { pages: chunkPages, label } = chunks[i];
         const newDoc = await PDFDocument.create();
-        const pages = await newDoc.copyPages(srcPdf, chunk);
-        pages.forEach((p) => newDoc.addPage(p));
+        const copied = await newDoc.copyPages(srcPdf, chunkPages);
+        copied.forEach((p) => newDoc.addPage(p));
         const bytes = await newDoc.save();
         const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" });
-        const start = chunk[0] + 1;
-        const end = chunk[chunk.length - 1] + 1;
+        const start = chunkPages[0] + 1;
+        const end = chunkPages[chunkPages.length - 1] + 1;
         newResults.push({
-          name: `${file.name.replace(/\.pdf$/i, "")}_part${i + 1}.pdf`,
+          name:
+            mode === "chapter"
+              ? `${file.name.replace(/\.pdf$/i, "")}_${label}_${chapters[i].title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 40)}.pdf`
+              : `${file.name.replace(/\.pdf$/i, "")}_${label}.pdf`,
           blob,
           pages: start === end ? `${start}` : `${start}–${end}`,
           sizeMB: bytes.length / 1024 / 1024,
@@ -177,6 +351,11 @@ export default function Home() {
               <p className="text-gray-400 text-sm mt-1">
                 {totalPages !== null ? `총 ${totalPages}페이지` : ""} ·{" "}
                 {(file.size / 1024 / 1024).toFixed(2)} MB
+                {chapters.length > 0 && (
+                  <span className="ml-2 text-emerald-500 font-medium">
+                    · 목차 {chapters.length}개 감지됨
+                  </span>
+                )}
               </p>
               <p className="text-gray-400 text-xs mt-2">클릭하여 다른 파일 선택</p>
             </div>
@@ -194,10 +373,10 @@ export default function Home() {
           <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
             <p className="font-semibold text-gray-700 mb-4">분할 방식 선택</p>
 
-            <div className="flex gap-3 mb-5">
+            <div className="flex gap-2 mb-5">
               <button
                 onClick={() => setMode("count")}
-                className={`flex-1 py-2 rounded-xl border-2 font-medium transition-colors ${
+                className={`flex-1 py-2 rounded-xl border-2 font-medium text-sm transition-colors ${
                   mode === "count"
                     ? "border-indigo-500 bg-indigo-50 text-indigo-700"
                     : "border-gray-200 text-gray-500 hover:border-indigo-300"
@@ -207,7 +386,7 @@ export default function Home() {
               </button>
               <button
                 onClick={() => setMode("size")}
-                className={`flex-1 py-2 rounded-xl border-2 font-medium transition-colors ${
+                className={`flex-1 py-2 rounded-xl border-2 font-medium text-sm transition-colors ${
                   mode === "size"
                     ? "border-indigo-500 bg-indigo-50 text-indigo-700"
                     : "border-gray-200 text-gray-500 hover:border-indigo-300"
@@ -215,9 +394,26 @@ export default function Home() {
               >
                 최대 파일 크기
               </button>
+              <button
+                onClick={() => setMode("chapter")}
+                disabled={chapters.length === 0}
+                title={chapters.length === 0 ? "이 PDF에 목차(북마크)가 없습니다" : undefined}
+                className={`flex-1 py-2 rounded-xl border-2 font-medium text-sm transition-colors ${
+                  mode === "chapter"
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                    : chapters.length > 0
+                    ? "border-gray-200 text-gray-500 hover:border-emerald-300"
+                    : "border-gray-100 text-gray-300 cursor-not-allowed"
+                }`}
+              >
+                챕터별
+                {chapters.length > 0 && (
+                  <span className="ml-1 text-xs opacity-70">({chapters.length})</span>
+                )}
+              </button>
             </div>
 
-            {mode === "count" ? (
+            {mode === "count" && (
               <div>
                 <label className="block text-sm text-gray-600 mb-2">
                   몇 개의 파일로 나눌까요?{" "}
@@ -235,7 +431,9 @@ export default function Home() {
                   페이지를 최대한 균등하게 나눕니다. 나머지 페이지는 앞 파일에 배분됩니다.
                 </p>
               </div>
-            ) : (
+            )}
+
+            {mode === "size" && (
               <div>
                 <label className="block text-sm text-gray-600 mb-2">
                   파일당 최대 크기 (MB)
@@ -254,10 +452,40 @@ export default function Home() {
               </div>
             )}
 
+            {mode === "chapter" && chapters.length > 0 && (
+              <div>
+                <p className="text-sm text-gray-600 mb-2">
+                  감지된 목차 — 각 챕터가 별도 파일로 분할됩니다
+                </p>
+                <ul className="max-h-52 overflow-y-auto space-y-1 border border-gray-100 rounded-xl p-3 bg-gray-50">
+                  {chapters.map((c, i) => (
+                    <li key={i} className="flex items-center gap-2 text-sm">
+                      <span className="text-emerald-500 font-semibold w-6 shrink-0 text-right">
+                        {i + 1}.
+                      </span>
+                      <span className="text-gray-700 flex-1 truncate" title={c.title}>
+                        {c.title}
+                      </span>
+                      <span className="text-gray-400 text-xs shrink-0">
+                        p.{c.startPage + 1}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-gray-400 mt-2">
+                  PDF에 내장된 1수준 북마크(목차) 기준으로 분할합니다.
+                </p>
+              </div>
+            )}
+
             <button
               onClick={split}
               disabled={loading}
-              className="mt-5 w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-semibold py-3 rounded-xl transition-colors"
+              className={`mt-5 w-full disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition-colors ${
+                mode === "chapter"
+                  ? "bg-emerald-600 hover:bg-emerald-700"
+                  : "bg-indigo-600 hover:bg-indigo-700"
+              }`}
             >
               {loading ? "분할 중…" : "PDF 분할하기"}
             </button>
@@ -287,8 +515,10 @@ export default function Home() {
                   key={i}
                   className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3"
                 >
-                  <div>
-                    <p className="text-sm font-medium text-gray-700">{r.name}</p>
+                  <div className="min-w-0 flex-1 mr-4">
+                    <p className="text-sm font-medium text-gray-700 truncate" title={r.name}>
+                      {r.name}
+                    </p>
                     <p className="text-xs text-gray-400">
                       페이지 {r.pages} · {r.sizeMB.toFixed(2)} MB
                     </p>
@@ -296,7 +526,7 @@ export default function Home() {
                   <a
                     href={URL.createObjectURL(r.blob)}
                     download={r.name}
-                    className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                    className="text-indigo-600 hover:text-indigo-800 text-sm font-medium shrink-0"
                   >
                     다운로드
                   </a>
