@@ -255,8 +255,9 @@ export default function Home() {
       const doc = await PDFDocument.create();
       const pp = await doc.copyPages(src, [...selPages].sort((a, b) => a - b).map(n => n - 1));
       pp.forEach(p => doc.addPage(p));
+      const saved = await doc.save();
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([await doc.save()], { type: "application/pdf" }));
+      a.href = URL.createObjectURL(new Blob([saved.buffer as ArrayBuffer], { type: "application/pdf" }));
       a.download = `${editFile!.name.replace(/\.pdf$/i, "")}_추출.pdf`; a.click();
     } catch (e) { setEditError("추출 중 오류: " + (e as Error).message); }
     finally { setEditLoading(false); }
@@ -568,7 +569,7 @@ export default function Home() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                 </svg>
-                <span className="text-sm font-medium">스타캐진한 1는 마지…</span>
+                <span className="text-sm font-medium">처리 중…</span>
               </div>
             )}
 
