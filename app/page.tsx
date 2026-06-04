@@ -13,7 +13,7 @@ interface MergeFile { file: File; pages: number | null; }
 export default function Home() {
   const [tab, setTab] = useState<Tab>("split");
 
-  // ── split state ──────────────────────────────────────────────────
+  // ── split state ──────────────────────────────────────────────────────────
   const [splitFile, setSplitFile] = useState<File | null>(null);
   const [splitMode, setSplitMode] = useState<SplitMode>("count");
   const [splitCount, setSplitCount] = useState(2);
@@ -26,14 +26,14 @@ export default function Home() {
   const [splitDragging, setSplitDragging] = useState(false);
   const splitBufRef = useRef<ArrayBuffer | null>(null);
 
-  // ── merge state ──────────────────────────────────────────────────
+  // ── merge state ──────────────────────────────────────────────────────────
   const [mergeFiles, setMergeFiles] = useState<MergeFile[]>([]);
   const [mergeResult, setMergeResult] = useState<{ blob: Blob; sizeMB: number } | null>(null);
   const [mergeLoading, setMergeLoading] = useState(false);
   const [mergeError, setMergeError] = useState("");
   const [mergeDragging, setMergeDragging] = useState(false);
 
-  // ── split handlers ───────────────────────────────────────────────
+  // ── split handlers ───────────────────────────────────────────────────────
   const loadSplitFile = async (f: File) => {
     setSplitFile(f);
     setSplitResults([]);
@@ -131,7 +131,7 @@ export default function Home() {
     });
   };
 
-  // ── merge handlers ───────────────────────────────────────────────
+  // ── merge handlers ───────────────────────────────────────────────────────
   const addMergeFiles = async (files: FileList | File[]) => {
     const arr = Array.from(files).filter(f => f.type === "application/pdf");
     if (!arr.length) { setMergeError("PDF 파일만 추가할 수 있습니다."); return; }
@@ -197,10 +197,12 @@ export default function Home() {
     URL.revokeObjectURL(url);
   };
 
+  // ── render ───────────────────────────────────────────────────────────────
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
       <div className="max-w-2xl mx-auto">
 
+        {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-indigo-700 mb-2">PDF 도구</h1>
           <p className="text-gray-500">PDF를 쉽게 분할하거나 여러 PDF를 하나로 합치세요</p>
@@ -226,9 +228,10 @@ export default function Home() {
           </button>
         </div>
 
-        {/* SPLIT TAB */}
+        {/* ── SPLIT TAB ─────────────────────────────────────────────────── */}
         {tab === "split" && (
           <>
+            {/* Upload */}
             <div
               className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-colors mb-6 ${
                 splitDragging ? "border-indigo-500 bg-indigo-50" : "border-indigo-300 bg-white hover:border-indigo-500"
@@ -358,9 +361,10 @@ export default function Home() {
           </>
         )}
 
-        {/* MERGE TAB */}
+        {/* ── MERGE TAB ─────────────────────────────────────────────────── */}
         {tab === "merge" && (
           <>
+            {/* Drop zone */}
             <div
               className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors mb-4 ${
                 mergeDragging ? "border-emerald-500 bg-emerald-50" : "border-emerald-300 bg-white hover:border-emerald-500"
@@ -379,6 +383,7 @@ export default function Home() {
               <p className="text-gray-400 text-xs mt-1">여러 파일을 한 번에 선택할 수 있습니다</p>
             </div>
 
+            {/* File list */}
             {mergeFiles.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm p-5 mb-6">
                 <div className="flex items-center justify-between mb-3">
@@ -407,6 +412,28 @@ export default function Home() {
                     </li>
                   ))}
                 </ul>
+                {mergeFiles.length >= 2 && (
+                  <div className="bg-emerald-50 rounded-xl p-3 mb-4">
+                    <p className="text-xs text-emerald-700 font-semibold mb-2">합쳐지는 순서</p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {mergeFiles.map((mf, i) => (
+                        <span key={i} className="contents">
+                          <span className="inline-flex items-center gap-1 bg-white border border-emerald-200 rounded-lg px-2 py-1 text-xs text-gray-700 max-w-[140px]">
+                            <span className="text-emerald-500 font-bold shrink-0">{i + 1}</span>
+                            <span className="truncate">{mf.file.name.replace(/\.pdf$/i, "")}</span>
+                            {mf.pages !== null && <span className="text-emerald-400 shrink-0">({mf.pages}p)</span>}
+                          </span>
+                          {i < mergeFiles.length - 1 && <span className="text-emerald-400 font-bold text-sm">→</span>}
+                        </span>
+                      ))}
+                      <span className="text-emerald-400 font-bold text-sm">→</span>
+                      <span className="inline-flex items-center gap-1 bg-emerald-600 rounded-lg px-2 py-1 text-xs text-white font-semibold">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-3-3v6" /></svg>
+                        합쳐진 PDF
+                      </span>
+                    </div>
+                  </div>
+                )}
                 <button onClick={merge} disabled={mergeLoading || mergeFiles.length < 2}
                   className="w-full disabled:opacity-50 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-xl transition-colors">
                   {mergeLoading ? "합치는 중…" : `PDF ${mergeFiles.length}개 합치기`}
