@@ -75,8 +75,8 @@ export default function Home() {
   const [srcThumbs, setSrcThumbs] = useState<PageThumb[]>([]);
   const [srcLoading, setSrcLoading] = useState(false);
   const [srcDragging, setSrcDragging] = useState(false);
-  const [dragPage, setDragPage] = useState<number | null>(null);
-  const [dropAfter, setDropAfter] = useState<number | null>(null);
+  const [selSrcPages, setSelSrcPages] = useState<Set<number>>(new Set());
+  const [insertAfter, setInsertAfter] = useState<number | null>(null);
 
   // ── SPLIT handlers
   const loadSplitFile = async (f: File) => {
@@ -273,21 +273,20 @@ export default function Home() {
     a.download = `${editFile.name.replace(/\.pdf$/i, "")}_편집.pdf`; a.click();
   };
 
-  const applyInsert = async (srcPageNum: number, afterN: number) => {
-    if (!editBytesRef.current || !srcFile) return;
+  const applyInsert = async (afterN: number) => {
+    if (!editBytesRef.current || !srcFile || !selSrcPages.size) return;
     const prev = editBytesRef.current;
     setUndoStack(s => [...s.slice(-9), prev]);
     setEditLoading(true);
     try {
       const basePdf = await PDFDocument.load(prev);
-      const { width: bw, height: bh } = basePdf.getPage(0).getSize();
-      const [emb] = await basePdf.embedPdf(await srcFile.arrayBuffer(), [srcPageNum - 1]);
-      const newPg = basePdf.insertPage(afterN);
-      newPg.setSize(bw, bh);
-      const scale = Math.min(bw / emb.width, bh / emb.height);
-      newPg.drawPage(emb, { x: (bw - emb.width * scale) / 2, y: (bh - emb.height * scale) / 2, xScale: scale, yScale: scale });
+      const srcPdf = await PDFDocument.load(await srcFile.arrayBuffer());
+      const sorted = [...selSrcPages].sort((a, b) => a - b).map(n => n - 1);
+      const copied = await basePdf.copyPages(srcPdf, sorted);
+      copied.forEach((page, i) => basePdf.insertPage(afterN + i, page));
       const bytes = new Uint8Array(await basePdf.save());
-      editBytesRef.current = bytes; setDropAfter(null); setDragPage(null);
+      editBytesRef.current = bytes;
+      setInsertAfter(null);
       setEditThumbs(await makeThumbs(bytes));
     } catch (e) { setEditError("삽입 중 오류: " + (e as Error).message); }
     finally { setEditLoading(false); }
@@ -531,7 +530,7 @@ export default function Home() {
                 ["insert", "➕ 페이지 삽입", "violet"],
               ] as const).map(([key, label, color]) => (
                 <button key={key}
-                  onClick={() => { setEditMode(key); setSelPages(new Set()); setEditFile(null); setEditThumbs([]); editBytesRef.current = null; setUndoStack([]); setEditError(""); setSrcFile(null); setSrcThumbs([]); setDragPage(null); setDropAfter(null); }}
+                  onClick={() => { setEditMode(key); setSelPages(new Set()); setEditFile(null); setEditThumbs([]); editBytesRef.current = null; setUndoStack([]); setEditError(""); setSrcFile(null); setSrcThumbs([]); setSelSrcPages(new Set()); setInsertAfter(null); }}
                   className={`flex-1 py-2 rounded-xl font-semibold text-sm transition-colors ${
                     editMode === key
                       ? color === "rose" ? "bg-rose-600 text-white" : color === "blue" ? "bg-blue-600 text-white" : "bg-violet-600 text-white"
@@ -665,46 +664,43 @@ export default function Home() {
             {/* INSERT MODE */}
             {editMode === "insert" && !editLoading && (
               <div className="grid grid-cols-2 gap-4">
-                {/* Left: base PDF with drop zones */}
+                {/* Left: base PDF */}
                 <div className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col">
                   <div className="p-3 border-b border-gray-100">
                     <p className="font-semibold text-sm text-gray-700">기존 PDF {editThumbs.length > 0 ? `(${editThumbs.length}페이지)` : ""}</p>
-                    {dragPage !== null && <p className="text-xs text-violet-500 mt-0.5">원하는 위치에 클릭하거나 드롭하세요</p>}
+                    {selSrcPages.size > 0 && editThumbs.length > 0 && <p className="text-xs text-violet-500 mt-0.5">삽입할 위치 버튼을 클릭하세요</p>}
                   </div>
                   {editThumbs.length === 0 ? (
-                    <div className="flex-1 flex items-center justify-center p-6 text-gray-300 text-sm text-center">위 파일 업로드 영역에서<br/>기존 PDF를 먼저 업로드하세요</div>
+                    <div
+                      className={`flex-1 flex flex-col items-center justify-center p-6 text-center cursor-pointer transition-colors ${editDragging ? "bg-violet-50" : ""}`}
+                      onClick={() => document.getElementById("editInput")?.click()}
+                    >
+                      <svg className="w-8 h-8 text-violet-200 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      <p className="text-gray-400 text-xs">클릭하여 기존 PDF 업로드</p>
+                      <p className="text-gray-300 text-xs mt-1">(위 업로드 영역도 사용 가능)</p>
+                    </div>
                   ) : (
                     <div className="overflow-y-auto max-h-[520px] p-3 space-y-1">
-                      <div
-                        onDragOver={(e) => { e.preventDefault(); setDropAfter(0); }}
-                        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropAfter(null); }}
-                        onDrop={(e) => { e.preventDefault(); if (dragPage !== null) applyInsert(dragPage, 0); setDropAfter(null); }}
-                        onClick={() => { if (dragPage !== null) applyInsert(dragPage, 0); }}
-                        className={`rounded-lg flex items-center justify-center text-xs font-medium transition-all ${
-                          dropAfter === 0 ? "h-12 bg-violet-100 border-2 border-violet-400 border-dashed text-violet-600" :
-                          dragPage !== null ? "h-7 bg-violet-50 border border-dashed border-violet-300 text-violet-400 cursor-pointer hover:bg-violet-100" :
-                          "h-2"
-                        }`}>
-                        {dropAfter === 0 ? "여기에 삽입" : dragPage !== null ? "맨 앞에 삽입" : ""}
-                      </div>
+                      {selSrcPages.size > 0 && (
+                        <button onClick={() => applyInsert(0)}
+                          className="w-full h-8 rounded-lg bg-violet-50 border border-dashed border-violet-300 text-violet-500 hover:bg-violet-100 text-xs font-medium transition-colors">
+                          ＋ 맨 앞에 삽입 ({selSrcPages.size}페이지)
+                        </button>
+                      )}
                       {editThumbs.map((t) => (
                         <div key={t.pageNum}>
                           <div className="flex items-center gap-2 py-1">
                             <img src={t.dataUrl} alt={`p${t.pageNum}`} className="rounded border border-gray-200 shrink-0" style={{ width: 72 }} />
                             <span className="text-xs text-gray-400">{t.pageNum}p</span>
                           </div>
-                          <div
-                            onDragOver={(e) => { e.preventDefault(); setDropAfter(t.pageNum); }}
-                            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropAfter(null); }}
-                            onDrop={(e) => { e.preventDefault(); if (dragPage !== null) applyInsert(dragPage, t.pageNum); setDropAfter(null); }}
-                            onClick={() => { if (dragPage !== null) applyInsert(dragPage, t.pageNum); }}
-                            className={`rounded-lg flex items-center justify-center text-xs font-medium transition-all ${
-                              dropAfter === t.pageNum ? "h-12 bg-violet-100 border-2 border-violet-400 border-dashed text-violet-600" :
-                              dragPage !== null ? "h-7 bg-violet-50 border border-dashed border-violet-300 text-violet-400 cursor-pointer hover:bg-violet-100" :
-                              "h-2"
-                            }`}>
-                            {dropAfter === t.pageNum ? "여기에 삽입" : dragPage !== null ? `${t.pageNum}페이지 뒤에 삽입` : ""}
-                          </div>
+                          {selSrcPages.size > 0 && (
+                            <button onClick={() => applyInsert(t.pageNum)}
+                              className="w-full h-8 rounded-lg bg-violet-50 border border-dashed border-violet-300 text-violet-500 hover:bg-violet-100 text-xs font-medium transition-colors">
+                              ＋ {t.pageNum}페이지 뒤에 삽입 ({selSrcPages.size}페이지)
+                            </button>
+                          )}
                         </div>
                       ))}
                       {undoStack.length > 0 && (
@@ -721,11 +717,10 @@ export default function Home() {
                 <div className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col">
                   <div className="p-3 border-b border-gray-100">
                     <p className="font-semibold text-sm text-gray-700">삽입할 PDF</p>
-                    {dragPage !== null ? (
-                      <p className="text-xs text-violet-500 mt-0.5">{dragPage}페이지 선택됨 — 왼쪽에 드롭 또는 클릭</p>
-                    ) : (
-                      <p className="text-xs text-gray-400 mt-0.5">페이지를 드래그하거나 클릭하여 선택 (1페이지만)</p>
-                    )}
+                    {selSrcPages.size > 0
+                      ? <p className="text-xs text-violet-500 mt-0.5">{selSrcPages.size}페이지 선택됨 — 왼쪽에서 삽입 위치 클릭</p>
+                      : <p className="text-xs text-gray-400 mt-0.5">삽입할 페이지를 클릭하여 선택 (여러 장 가능)</p>
+                    }
                   </div>
                   <div className="p-3">
                     <div
@@ -736,7 +731,7 @@ export default function Home() {
                       onClick={() => document.getElementById("srcInput")?.click()}
                     >
                       <input id="srcInput" type="file" accept="application/pdf" className="hidden"
-                        onChange={e => { const f = e.target.files?.[0]; if (f) loadSrcFile(f); e.currentTarget.value = ""; }} />
+                        onChange={e => { const f = e.target.files?.[0]; if (f) { loadSrcFile(f); setSelSrcPages(new Set()); } e.currentTarget.value = ""; }} />
                       {srcFile ? (
                         <div>
                           <p className="text-violet-700 text-xs font-semibold truncate">{srcFile.name}</p>
@@ -748,27 +743,32 @@ export default function Home() {
                     </div>
                     {srcLoading && <div className="text-center text-xs text-violet-500 py-4">써네일 생성 중…</div>}
                     {srcThumbs.length > 0 && !srcLoading && (
-                      <div className="flex flex-wrap gap-2 max-h-[400px] overflow-y-auto">
-                        {srcThumbs.map(t => (
-                          <div key={t.pageNum}
-                            draggable
-                            onDragStart={() => setDragPage(t.pageNum)}
-                            onDragEnd={() => { if (dropAfter === null) setDragPage(null); }}
-                            onClick={() => setDragPage(dragPage === t.pageNum ? null : t.pageNum)}
-                            className={`relative cursor-grab active:cursor-grabbing rounded-xl overflow-hidden border-2 transition-all select-none ${
-                              dragPage === t.pageNum ? "border-violet-500 ring-2 ring-violet-300" : "border-gray-200 hover:border-violet-300"
-                            }`}
-                            style={{ width: 80 }}>
-                            <img src={t.dataUrl} className="w-full block" alt={`소스 ${t.pageNum}`} />
-                            <div className={`text-center text-xs py-1 ${dragPage === t.pageNum ? "bg-violet-50 text-violet-600 font-semibold" : "bg-gray-50 text-gray-500"}`}>{t.pageNum}</div>
-                            {dragPage === t.pageNum && (
-                              <div className="absolute top-1 right-1 w-5 h-5 bg-violet-500 rounded-full flex items-center justify-center">
-                                <span className="text-white text-xs">✓</span>
+                      <>
+                        {selSrcPages.size > 0 && (
+                          <button onClick={() => setSelSrcPages(new Set())} className="w-full text-xs text-gray-400 hover:text-gray-600 mb-2 text-right">선택 해제</button>
+                        )}
+                        <div className="flex flex-wrap gap-2 max-h-[400px] overflow-y-auto">
+                          {srcThumbs.map(t => {
+                            const sel = selSrcPages.has(t.pageNum);
+                            return (
+                              <div key={t.pageNum}
+                                onClick={() => setSelSrcPages(prev => { const s = new Set(prev); s.has(t.pageNum) ? s.delete(t.pageNum) : s.add(t.pageNum); return s; })}
+                                className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all select-none ${
+                                  sel ? "border-violet-500 ring-2 ring-violet-300" : "border-gray-200 hover:border-violet-300"
+                                }`}
+                                style={{ width: 80 }}>
+                                <img src={t.dataUrl} className="w-full block" alt={`소스 ${t.pageNum}`} />
+                                <div className={`text-center text-xs py-1 ${sel ? "bg-violet-50 text-violet-600 font-semibold" : "bg-gray-50 text-gray-500"}`}>{t.pageNum}</div>
+                                {sel && (
+                                  <div className="absolute top-1 right-1 w-5 h-5 bg-violet-500 rounded-full flex items-center justify-center">
+                                    <span className="text-white text-xs font-bold">✓</span>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                            );
+                          })}
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
