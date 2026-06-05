@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { PDFDocument } from "pdf-lib";
 
 type Tab = "split" | "merge" | "edit" | "compress";
-const COMPRESS_DPI = 200;
+const COMPRESS_DPI = 150;
 const COMPRESS_QUALITY = 0.8;
 type SplitMode = "count" | "size" | "range";
 type EditMode = "delete" | "extract" | "insert";
@@ -640,7 +640,7 @@ export default function Home() {
             {/* Compress button */}
             {compressFile&&!compressLoading&&(
               <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
-                <p className="text-xs text-gray-400 mb-4">200DPI · JPEG 0.8 품질로 압축합니다. 압축 후 텍스트 선택·검색이 되지 않을 수 있습니다.</p>
+                <p className="text-xs text-gray-400 mb-4">150DPI · JPEG 0.8 품질로 압축합니다. 압축 후 텍스트 선택·검색이 되지 않을 수 있습니다.</p>
                 <button onClick={compress} className="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-3 rounded-xl transition-colors">
                   PDF 압축 시작
                 </button>
@@ -671,7 +671,7 @@ export default function Home() {
                   </div>
                   <div>
                     <p className="font-semibold text-gray-700">압축 완료</p>
-                    <p className="text-xs text-gray-400">200DPI · JPEG 0.8</p>
+                    <p className="text-xs text-gray-400">150DPI · JPEG 0.8</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3 mb-5">
