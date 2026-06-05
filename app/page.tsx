@@ -394,58 +394,67 @@ export default function Home() {
                       ):(<p className="text-gray-400 text-xs">기존 PDF 업로드<br/><span className="text-gray-300">드래그 또는 클릭</span></p>)}
                     </div>
 
-                    {/* Thumbnail grid — each thumb is a drag target; cursor X decides insert position */}
+                    {/* Thumbnail grid with insertion drop zones between pages */}
                     {editThumbs.length>0&&(
                       <div className="overflow-y-auto flex-1" style={{maxHeight:440}}>
                         {/*
-                          Each thumbnail handles onDragOver and uses e.clientX vs its rect
-                          to decide whether to insert BEFORE (left half) or AFTER (right half).
-                          dropZoneIndex 0 = before page 1, N = after page N.
-                          The line is rendered as an absolutely-positioned bar on the
-                          left or right edge of the thumb it straddles.
+                          Layout: [DropZone0] [Thumb0] [DropZone1] [Thumb1] ... [ThumbN] [DropZoneN+1]
+                          Each DropZone is a thin hit area (8px wide) that shows a violet glow line
+                          when active. The active zone is highlighted to show insertion position.
+                          dropZoneIndex: 0 = before page 1, N = after page N.
                         */}
                         <div
-                          className="flex flex-wrap p-1"
-                          style={{gap:"10px 10px"}}
+                          className="flex flex-wrap items-start p-2"
+                          style={{gap:"8px 4px"}}
                           onDragLeave={e=>{
-                            // Only clear when truly leaving the container
                             if(!e.currentTarget.contains(e.relatedTarget as Node))setDropZoneIndex(null);
                           }}
+                          onDragOver={e=>{e.preventDefault();}}
+                          onDrop={e=>{e.preventDefault();}}
                         >
                           {editThumbs.map((t,idx)=>{
-                            const showLeft  = dropZoneIndex===idx;          // line on left edge
-                            const showRight = dropZoneIndex===editThumbs.length && idx===editThumbs.length-1; // line on right edge of last
+                            const isActiveLeft  = dropZoneIndex===idx;
+                            const isActiveRight = dropZoneIndex===editThumbs.length && idx===editThumbs.length-1;
                             return (
-                              <div
-                                key={t.pageNum}
-                                className="relative group"
-                                style={{width:80}}
-                                onDragEnter={e=>{e.preventDefault();e.stopPropagation();if(!e.dataTransfer.types.includes("Files"))setDropZoneIndex(getDropIdx(e,idx));}}
-                                onDragOver={e=>{e.preventDefault();e.stopPropagation();if(!e.dataTransfer.types.includes("Files"))setDropZoneIndex(getDropIdx(e,idx));}}
-                                onDrop={e=>{e.preventDefault();e.stopPropagation();const pos=dropZoneIndex??idx;setDropZoneIndex(null);applyInsert(pos,dragPayloadRef.current);}}
-                              >
-                                {/* Left insertion line */}
-                                {showLeft&&(
-                                  <div className="absolute inset-y-0 -left-1.5 z-20 flex items-center pointer-events-none">
-                                    <div className="w-0.5 rounded-full bg-violet-500" style={{height:"100%",minHeight:90,boxShadow:"0 0 6px rgba(139,92,246,0.7)"}} />
-                                  </div>
-                                )}
-                                {/* Right insertion line (after last page) */}
-                                {showRight&&(
-                                  <div className="absolute inset-y-0 -right-1.5 z-20 flex items-center pointer-events-none">
-                                    <div className="w-0.5 rounded-full bg-violet-500" style={{height:"100%",minHeight:90,boxShadow:"0 0 6px rgba(139,92,246,0.7)"}} />
-                                  </div>
-                                )}
-                                <div className="rounded-xl overflow-hidden border-2 border-gray-200 hover:border-gray-300 transition-colors">
-                                  <img src={t.dataUrl} className="w-full block" alt={`p${t.pageNum}`}/>
-                                  <div className="text-center text-xs py-1 bg-gray-50 text-gray-500">{t.pageNum}</div>
+                              <div key={t.pageNum} className="contents">
+                                {/* Drop zone BEFORE this thumb */}
+                                <div
+                                  className="self-stretch flex items-center justify-center cursor-col-resize"
+                                  style={{width:isActiveLeft?12:8,minHeight:100,transition:"width 0.1s"}}
+                                  onDragEnter={e=>{e.preventDefault();e.stopPropagation();if(!e.dataTransfer.types.includes("Files"))setDropZoneIndex(idx);}}
+                                  onDragOver={e=>{e.preventDefault();e.stopPropagation();if(!e.dataTransfer.types.includes("Files"))setDropZoneIndex(idx);}}
+                                  onDrop={e=>{e.preventDefault();e.stopPropagation();setDropZoneIndex(null);applyInsert(idx,dragPayloadRef.current);}}
+                                >
+                                  {isActiveLeft&&(
+                                    <div className="rounded-full" style={{width:3,height:"100%",minHeight:100,background:"#7c3aed",boxShadow:"0 0 8px 2px rgba(124,58,237,0.6)"}} />
+                                  )}
                                 </div>
-                                {/* Per-page delete button */}
-                                <button
-                                  onClick={e=>{e.stopPropagation();deleteBasePage(t.pageNum);}}
-                                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-500 hover:bg-rose-600 rounded-full text-white text-xs hidden group-hover:flex items-center justify-center shadow z-10 transition-colors"
-                                  title="이 페이지 삭제"
-                                >×</button>
+                                {/* Thumbnail */}
+                                <div className="relative group" style={{width:80}}>
+                                  <div className="rounded-xl overflow-hidden border-2 border-gray-200 hover:border-gray-300 transition-colors">
+                                    <img src={t.dataUrl} className="w-full block" alt={`p${t.pageNum}`}/>
+                                    <div className="text-center text-xs py-1 bg-gray-50 text-gray-500">{t.pageNum}</div>
+                                  </div>
+                                  <button
+                                    onClick={e=>{e.stopPropagation();deleteBasePage(t.pageNum);}}
+                                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-500 hover:bg-rose-600 rounded-full text-white text-xs hidden group-hover:flex items-center justify-center shadow z-10 transition-colors"
+                                    title="이 페이지 삭제"
+                                  >×</button>
+                                </div>
+                                {/* Drop zone AFTER last thumb */}
+                                {idx===editThumbs.length-1&&(
+                                  <div
+                                    className="self-stretch flex items-center justify-center cursor-col-resize"
+                                    style={{width:isActiveRight?12:8,minHeight:100,transition:"width 0.1s"}}
+                                    onDragEnter={e=>{e.preventDefault();e.stopPropagation();if(!e.dataTransfer.types.includes("Files"))setDropZoneIndex(editThumbs.length);}}
+                                    onDragOver={e=>{e.preventDefault();e.stopPropagation();if(!e.dataTransfer.types.includes("Files"))setDropZoneIndex(editThumbs.length);}}
+                                    onDrop={e=>{e.preventDefault();e.stopPropagation();setDropZoneIndex(null);applyInsert(editThumbs.length,dragPayloadRef.current);}}
+                                  >
+                                    {isActiveRight&&(
+                                      <div className="rounded-full" style={{width:3,height:"100%",minHeight:100,background:"#7c3aed",boxShadow:"0 0 8px 2px rgba(124,58,237,0.6)"}} />
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
