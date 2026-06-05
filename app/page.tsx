@@ -6,9 +6,9 @@ import { PDFDocument } from "pdf-lib";
 type Tab = "split" | "merge" | "edit" | "compress";
 type CompressPreset = "high" | "medium" | "low";
 const COMPRESS_PRESETS: Record<CompressPreset,{label:string;dpi:number;quality:number;desc:string}> = {
-  high:   {label:"고품질",    dpi:200, quality:0.85, desc:"인쇄·업무용"},
-  medium: {label:"표준",      dpi:150, quality:0.75, desc:"이메일·공유 (추천)"},
-  low:    {label:"최대 압축", dpi:100, quality:0.60, desc:"모바일·웹 첨부"},
+  high:   {label:"고품질",    dpi:150, quality:0.82, desc:"인쇄·업무용"},
+  medium: {label:"표준",      dpi:110, quality:0.72, desc:"이메일·공유 (추천)"},
+  low:    {label:"최대 압축", dpi: 72, quality:0.55, desc:"모바일·웹 첨부"},
 };
 type SplitMode = "count" | "size" | "range";
 type EditMode = "delete" | "extract" | "insert";
@@ -74,7 +74,7 @@ export default function Home() {
   const [compressPreset, setCompressPreset] = useState<CompressPreset>("medium");
   const [compressLoading, setCompressLoading] = useState(false);
   const [compressProgress, setCompressProgress] = useState(0);
-  const [compressResult, setCompressResult] = useState<{blob:Blob;origMB:number;newMB:number;ratio:number}|null>(null);
+  const [compressResult, setCompressResult] = useState<{blob:Blob;origMB:number;newMB:number;ratio:number;fallback:boolean}|null>(null);
   const [compressError, setCompressError] = useState("");
   const [compressDragging, setCompressDragging] = useState(false);
   const compressBufRef = useRef<ArrayBuffer | null>(null);
@@ -108,11 +108,33 @@ export default function Home() {
       // Method 2: save with object streams for additional compression
       const saved = await newPdf.save({useObjectStreams: true});
       const origMB = origBuf.byteLength / 1024 / 1024;
-      const newMB = saved.length / 1024 / 1024;
+      const origSize = origBuf.byteLength;
+
+      // If rasterized result is larger than original, fall back to method 2 only on original
+      let finalBytes: Uint8Array;
+      let finalMB: number;
+      let fallback = false;
+      if (saved.length >= origSize) {
+        const origPdf = await PDFDocument.load(origBuf.slice());
+        const origSaved = await origPdf.save({useObjectStreams: true});
+        if (origSaved.length < origSize) {
+          finalBytes = origSaved;
+          finalMB = origSaved.length / 1024 / 1024;
+        } else {
+          finalBytes = saved;
+          finalMB = saved.length / 1024 / 1024;
+        }
+        fallback = true;
+      } else {
+        finalBytes = saved;
+        finalMB = saved.length / 1024 / 1024;
+      }
+
+      const newMB = finalMB;
       const ratio = Math.round((1 - newMB / origMB) * 100);
       setCompressResult({
-        blob: new Blob([saved.buffer as ArrayBuffer], {type:"application/pdf"}),
-        origMB, newMB, ratio,
+        blob: new Blob([finalBytes.buffer as ArrayBuffer], {type:"application/pdf"}),
+        origMB, newMB, ratio, fallback,
       });
     } catch(e) { setCompressError("압축 중 오류: " + (e as Error).message); }
     finally { setCompressLoading(false); }
@@ -690,9 +712,14 @@ export default function Home() {
                     </p>
                   </div>
                 </div>
-                {compressResult.ratio<=0&&(
+                {compressResult.fallback&&(
+                  <div className="bg-amber-50 border border-amber-200 text-amber-700 rounded-xl px-4 py-3 text-xs mb-4">
+                    텍스트·벡터 위주 PDF는 이미지 변환 시 오히려 커질 수 있습니다. 메타데이터 정리만 적용된 결과를 제공합니다.
+                  </div>
+                )}
+                {!compressResult.fallback&&compressResult.ratio<=0&&(
                   <div className="bg-orange-50 border border-orange-200 text-orange-700 rounded-xl px-4 py-3 text-xs mb-4">
-                    원본이 이미 잘 압축된 파일이거나 텍스트 위주 PDF입니다. 더 낮은 품질 프리셋을 시도해보세요.
+                    원본이 이미 잘 압축된 파일입니다. 더 낮은 품질 프리셋을 시도해보세요.
                   </div>
                 )}
                 <button onClick={downloadCompressed} className="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-3 rounded-xl transition-colors">
