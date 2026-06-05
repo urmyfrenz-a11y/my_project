@@ -50,6 +50,9 @@ const getHtml2Canvas = async () => {
   return _html2canvas;
 };
 
+const SUPABASE_URL = "https://ywofxncimmukmjldcyuk.supabase.co";
+const SUPABASE_KEY = "sb_publishable_MVVFMcNJK7yfsFIMCikrvQ_ief-0CNV";
+
 const TAB_COLORS: Record<string, { active: string; idle: string }> = {
   indigo:  { active: "bg-indigo-600 text-white shadow-sm",  idle: "text-slate-500 hover:text-indigo-600" },
   emerald: { active: "bg-emerald-600 text-white shadow-sm", idle: "text-slate-500 hover:text-emerald-600" },
@@ -146,6 +149,20 @@ async function makeThumbs(bytes: Uint8Array): Promise<PageThumb[]> {
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("split");
+  const [views, setViews] = useState<number | null>(null);
+
+  useEffect(() => {
+    let done = false;
+    fetch(`${SUPABASE_URL}/rest/v1/rpc/increment_page_view`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify({ page_slug: "landing" }),
+    })
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then(n => { if (!done) setViews(typeof n === "number" ? n : Number(n)); })
+      .catch(() => { /* 카운터 실패 시 조용히 무시 */ });
+    return () => { done = true; };
+  }, []);
 
   useEffect(() => {
     const prevent = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); };
@@ -1011,6 +1028,12 @@ export default function Home() {
         </section>
 
         <footer className="mt-12 pb-2 text-center">
+          {views !== null && (
+            <div className="inline-flex items-center gap-1.5 bg-white border border-slate-200 text-slate-500 text-xs font-medium px-3 py-1.5 rounded-full shadow-sm mb-3">
+              <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              지금까지 <span className="font-bold text-slate-700">{views.toLocaleString("ko-KR")}</span>명이 방문했어요
+            </div>
+          )}
           <p className="text-xs text-slate-400">강의용 PDF 편집기 · 모든 작업은 사용자의 브라우저에서 안전하게 처리됩니다.</p>
         </footer>
 
