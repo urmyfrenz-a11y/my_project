@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PDF 분할기",
-  description: "PDF 파일을 페이지 기준으로 손쉽게 분할하세요",
+  title: "강의용 PDF 편집기",
+  description: "강의 자료를 위한 가장 쉬운 PDF 편집 도구 — 분할·병합·페이지 편집·압축을 설치 없이. 업로드한 파일은 브라우저에서만 처리되어 안전합니다.",
 };
 
 export default function RootLayout({

@@ -353,14 +353,18 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
+    <main className="min-h-screen bg-slate-50 py-10 px-4">
       <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-indigo-700 mb-2">PDF 도구</h1>
-          <p className="text-gray-500">PDF를 쉽게 분할하거나 여러 PDF를 하나로 합치세요</p>
-        </div>
+        <header className="text-center mb-9">
+          <div className="inline-flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-medium px-3 py-1 rounded-full shadow-sm mb-4">
+            <svg className="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            파일은 브라우저에서만 처리 · 서버 저장 없음
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 mb-3">강의용 PDF 편집기</h1>
+          <p className="text-slate-500 max-w-xl mx-auto leading-relaxed">강의 자료 준비를 위한 가장 쉬운 PDF 편집 도구.<br className="hidden sm:block"/> 분할·병합·페이지 편집·압축을 설치 없이 한 곳에서.</p>
+        </header>
 
-        <div className="flex bg-white rounded-2xl shadow-sm p-1.5 mb-6 gap-1.5">
+        <div className="flex bg-white border border-slate-200 rounded-2xl shadow-sm p-1.5 mb-6 gap-1.5">
           {([["split","✂️ PDF 분할","indigo"],["merge","🔗 PDF 합치기","emerald"],["edit","✏️ 페이지 편집","violet"],["compress","🗜️ PDF 압축","sky"]] as const).map(([key,label,color])=>(
             <button key={key} onClick={()=>setTab(key)} className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${tab===key ? color==="indigo"?"bg-indigo-600 text-white shadow-sm":color==="emerald"?"bg-emerald-600 text-white shadow-sm":color==="sky"?"bg-sky-600 text-white shadow-sm":"bg-violet-600 text-white shadow-sm" : color==="indigo"?"text-gray-500 hover:text-indigo-600":color==="emerald"?"text-gray-500 hover:text-emerald-600":color==="sky"?"text-gray-500 hover:text-sky-600":"text-gray-500 hover:text-violet-600"}`}>{label}</button>
           ))}
@@ -707,6 +711,31 @@ export default function Home() {
             )}
           </div>
         )}
+
+        {/* ===== Features ===== */}
+        <section className="mt-16 pt-10 border-t border-slate-200">
+          <h2 className="text-center text-xl font-bold tracking-tight text-slate-900 mb-2">강의 준비에 필요한 모든 것</h2>
+          <p className="text-center text-sm text-slate-500 mb-9">군더더기 없이, 꼭 필요한 기능만 담았습니다.</p>
+          <div className="grid sm:grid-cols-3 gap-4">
+            {([
+              ["안전한 파일 처리","업로드한 파일은 서버로 전송되지 않고 사용자의 브라우저 안에서만 처리됩니다. 작업이 끝나면 어떤 데이터도 남지 않아 민감한 강의 자료도 안심하고 다룰 수 있습니다.","M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"],
+              ["자유로운 페이지 편집","원하는 페이지를 자르고, 붙이고, 삭제하고, 다른 PDF의 페이지를 끼워 넣을 수 있습니다. 여러 자료를 합치거나 순서를 바꿔 강의 흐름에 맞게 재구성하세요.","M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"],
+              ["직관적인 사용법","드래그 한 번이면 충분합니다. 복잡한 설정도, 프로그램 설치도, 회원가입도 없이 누구나 열어서 바로 사용할 수 있습니다.","M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"],
+            ] as const).map(([title,desc,icon])=>(
+              <div key={title} className="bg-white border border-slate-200 rounded-2xl p-6 transition-shadow hover:shadow-md">
+                <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center mb-4">
+                  <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d={icon}/></svg>
+                </div>
+                <h3 className="font-semibold text-slate-800 mb-1.5">{title}</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <footer className="mt-12 pb-2 text-center">
+          <p className="text-xs text-slate-400">강의용 PDF 편집기 · 모든 작업은 사용자의 브라우저에서 안전하게 처리됩니다.</p>
+        </footer>
 
       </div>
     </main>
