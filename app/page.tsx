@@ -470,7 +470,6 @@ export default function Home() {
   const onAnnDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (annTool !== "highlight" || !annPage) return;
     const p = annXY(e.clientX, e.clientY); drawStartRef.current = p; setDrawRect({ x: p.x, y: p.y, w: 0, h: 0 });
-    annOverlayRef.current?.setPointerCapture(e.pointerId);
   };
   const onAnnMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!annPage) return;
@@ -503,14 +502,14 @@ export default function Home() {
     setAnnTool("move");
   };
   const startTextMove = (e: React.PointerEvent, id: string) => {
-    if (annTool === "eraser" || annTool === "highlight" || !annPage) return;
+    if (annTool !== "move" || !annPage) return;
     e.stopPropagation();
     const an = anns.find(a => a.id === id) as AnnText | undefined; if (!an) return;
     const p = annXY(e.clientX, e.clientY);
     moveRef.current = { id, dx: p.x - an.xPct * annPage.dispW, dy: p.y - an.yPct * annPage.dispH };
-    annOverlayRef.current?.setPointerCapture(e.pointerId);
   };
   const updateText = (id: string, text: string) => setAnns(a => a.map(an => an.id === id ? { ...an, text } : an));
+  const deleteAnn = (id: string) => setAnns(a => a.filter(x => x.id !== id));
 
   const saveAnnotated = async () => {
     if (!annBufRef.current) return;
@@ -1217,12 +1216,12 @@ export default function Home() {
                     <div className="relative shadow-lg bg-white shrink-0" style={{width:annPage.dispW,height:annPage.dispH}}>
                       <img src={annPage.url} alt={`page ${annPageNum}`} width={annPage.dispW} height={annPage.dispH} draggable={false} className="block select-none"/>
                       <div ref={annOverlayRef} className="absolute inset-0"
-                        style={{cursor: annTool==="highlight"?"crosshair":annTool==="eraser"?"pointer":annTool==="text"?"copy":"default", touchAction:"none"}}
-                        onPointerDown={onAnnDown} onPointerMove={onAnnMove} onPointerUp={onAnnUp} onClick={onAnnClickAdd}>
+                        style={{cursor: annTool==="highlight"?`url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26'><circle cx='13' cy='13' r='9' fill='${HL_COLORS[hlIdx].hex}' fill-opacity='0.5' stroke='#475569' stroke-width='1.5'/></svg>`)}") 13 13, crosshair`:annTool==="eraser"?"pointer":annTool==="text"?"copy":"default", touchAction:"none"}}
+                        onPointerDown={onAnnDown} onPointerMove={onAnnMove} onPointerUp={onAnnUp} onPointerLeave={onAnnUp} onClick={onAnnClickAdd}>
 
                         {anns.filter(a=>a.page===annPageNum&&a.type==="hi").map(a=>{const h=a as AnnHi;return(
-                          <div key={h.id} onClick={(e)=>{e.stopPropagation();if(annTool==="eraser")setAnns(prev=>prev.filter(x=>x.id!==h.id));}} className={annTool==="eraser"?"cursor-pointer hover:outline hover:outline-2 hover:outline-rose-400":""}
-                            style={{position:"absolute",left:h.xPct*annPage.dispW,top:h.yPct*annPage.dispH,width:h.wPct*annPage.dispW,height:h.hPct*annPage.dispH,background:h.hex,opacity:0.4,mixBlendMode:"multiply",borderRadius:2}}/>
+                          <div key={h.id} onClick={(e)=>{e.stopPropagation();if(annTool==="eraser")deleteAnn(h.id);}} className={annTool==="eraser"?"cursor-pointer hover:outline hover:outline-2 hover:outline-rose-400":""}
+                            style={{position:"absolute",left:h.xPct*annPage.dispW,top:h.yPct*annPage.dispH,width:h.wPct*annPage.dispW,height:h.hPct*annPage.dispH,background:h.hex,opacity:0.4,mixBlendMode:"multiply",borderRadius:2,pointerEvents:annTool==="eraser"?"auto":"none"}}/>
                         );})}
 
                         {drawRect&&annTool==="highlight"&&(
@@ -1230,17 +1229,18 @@ export default function Home() {
                         )}
 
                         {anns.filter(a=>a.page===annPageNum&&a.type==="text").map(a=>{const t=a as AnnText;return(
-                          <div key={t.id} className="absolute" style={{left:t.xPct*annPage.dispW,top:t.yPct*annPage.dispH,width:t.wPct*annPage.dispW}}
-                            onClick={(e)=>{e.stopPropagation();if(annTool==="eraser")setAnns(prev=>prev.filter(x=>x.id!==t.id));}}>
-                            {annTool!=="eraser"&&(
-                              <div onPointerDown={(e)=>startTextMove(e,t.id)} className="absolute -top-5 left-0 right-0 h-5 bg-amber-400 rounded-t-md cursor-move flex items-center justify-between px-1.5 text-white text-[10px] select-none">
-                                <span>⠿ 이동</span>
-                                <button onClick={(e)=>{e.stopPropagation();setAnns(prev=>prev.filter(x=>x.id!==t.id));}} className="hover:bg-amber-500 rounded px-1 leading-none">×</button>
-                              </div>
+                          <div key={t.id} className="absolute group"
+                            style={{left:t.xPct*annPage.dispW,top:t.yPct*annPage.dispH,width:t.wPct*annPage.dispW,pointerEvents:annTool==="highlight"?"none":"auto",cursor:annTool==="move"?"move":"default"}}
+                            onPointerDown={(e)=>startTextMove(e,t.id)}
+                            onClick={(e)=>{e.stopPropagation();if(annTool==="eraser")deleteAnn(t.id);}}>
+                            <textarea value={t.text} onChange={(e)=>updateText(t.id,e.target.value)}
+                              onPointerDown={(e)=>{if(annTool==="text")e.stopPropagation();}} readOnly={annTool!=="text"}
+                              className="w-full resize-none rounded-md border border-amber-400 bg-amber-50/95 p-1.5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300 shadow-sm overflow-hidden"
+                              style={{fontSize:annPage.dispW*0.019,lineHeight:1.4,pointerEvents:annTool==="text"?"auto":"none"}} rows={Math.max(1,(t.text.match(/\n/g)?.length??0)+1)}/>
+                            {annTool!=="highlight"&&(
+                              <button onPointerDown={(e)=>e.stopPropagation()} onClick={(e)=>{e.stopPropagation();deleteAnn(t.id);}}
+                                className="absolute -top-2 -right-2 w-5 h-5 bg-rose-500 hover:bg-rose-600 text-white rounded-full text-xs leading-none hidden group-hover:flex items-center justify-center shadow z-10" title="삭제">×</button>
                             )}
-                            <textarea value={t.text} onChange={(e)=>updateText(t.id,e.target.value)} onPointerDown={e=>e.stopPropagation()} readOnly={annTool==="eraser"}
-                              className="w-full resize-none rounded-b-md rounded-tr-md border border-amber-400 bg-amber-50/95 p-1.5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300 shadow-sm overflow-hidden"
-                              style={{fontSize:annPage.dispW*0.019,lineHeight:1.4}} rows={Math.max(1,(t.text.match(/\n/g)?.length??0)+1)}/>
                           </div>
                         );})}
                       </div>
