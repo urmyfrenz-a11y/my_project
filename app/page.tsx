@@ -5,7 +5,7 @@ import { PDFDocument, rgb, BlendMode } from "pdf-lib";
 
 type Tab = "split" | "merge" | "edit" | "compress" | "convert" | "annotate";
 type MdTemplate = "basic" | "report" | "proposal" | "lecture" | "minutes";
-type AnnTool = "move" | "text" | "highlight" | "eraser";
+type AnnTool = "none" | "highlight" | "eraser";
 interface AnnText { id: string; page: number; type: "text"; xPct: number; yPct: number; wPct: number; text: string; }
 interface AnnHi { id: string; page: number; type: "hi"; xPct: number; yPct: number; wPct: number; hPct: number; hex: string; }
 type Ann = AnnText | AnnHi;
@@ -416,14 +416,16 @@ export default function Home() {
   const [annLoading, setAnnLoading] = useState(false);
   const [annError, setAnnError] = useState("");
   const [annDragOver, setAnnDragOver] = useState(false);
-  const [annTool, setAnnTool] = useState<AnnTool>("move");
+  const [annTool, setAnnTool] = useState<AnnTool>("none");
   const [hlIdx, setHlIdx] = useState(0);
   const [anns, setAnns] = useState<Ann[]>([]);
   const [annSaving, setAnnSaving] = useState(false);
   const [drawRect, setDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const annOverlayRef = useRef<HTMLDivElement | null>(null);
   const drawStartRef = useRef<{ x: number; y: number } | null>(null);
-  const moveRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
+  const dragRef = useRef<{ id: string; sx: number; sy: number; dx: number; dy: number; moved: boolean } | null>(null);
 
   const renderAnnPage = async (pageNum: number) => {
     if (!annBufRef.current) return;
@@ -445,7 +447,7 @@ export default function Home() {
 
   const loadAnnFile = async (f: File) => {
     if (f.type !== "application/pdf") { setAnnError("PDF 파일만 업로드할 수 있습니다."); return; }
-    setAnnFile(f); setAnns([]); setAnnError(""); setAnnTool("move"); setAnnLoading(true);
+    setAnnFile(f); setAnns([]); setAnnError(""); setAnnTool("none"); setSelectedId(null); setEditingId(null); setAnnLoading(true);
     try {
       const buf = await f.arrayBuffer(); annBufRef.current = buf;
       const lib = await getPdfJs();
@@ -459,7 +461,7 @@ export default function Home() {
   const goAnnPage = (n: number) => {
     if (!annNumPages) return;
     const p = Math.max(1, Math.min(annNumPages, n));
-    setAnnPageNum(p); setDrawRect(null); drawStartRef.current = null; renderAnnPage(p);
+    setAnnPageNum(p); setDrawRect(null); drawStartRef.current = null; setSelectedId(null); setEditingId(null); renderAnnPage(p);
   };
 
   const annXY = (clientX: number, clientY: number) => {
@@ -476,9 +478,11 @@ export default function Home() {
     if (annTool === "highlight" && drawStartRef.current) {
       const p = annXY(e.clientX, e.clientY); const s = drawStartRef.current;
       setDrawRect({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) });
-    } else if (moveRef.current) {
-      const p = annXY(e.clientX, e.clientY); const m = moveRef.current;
-      setAnns(a => a.map(an => an.id === m.id ? { ...an, xPct: (p.x - m.dx) / annPage.dispW, yPct: (p.y - m.dy) / annPage.dispH } : an));
+    } else if (dragRef.current) {
+      const p = annXY(e.clientX, e.clientY); const d = dragRef.current;
+      if (!d.moved && Math.hypot(p.x - d.sx, p.y - d.sy) < 4) return;
+      d.moved = true;
+      setAnns(a => a.map(an => an.id === d.id ? { ...an, xPct: (p.x - d.dx) / annPage.dispW, yPct: (p.y - d.dy) / annPage.dispH } : an));
     }
   };
   const onAnnUp = () => {
@@ -488,28 +492,42 @@ export default function Home() {
       }
       drawStartRef.current = null; setDrawRect(null);
     }
-    moveRef.current = null;
+    if (dragRef.current && !dragRef.current.moved) setSelectedId(dragRef.current.id);
+    dragRef.current = null;
   };
-  const onAnnClickAdd = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (annTool !== "text" || !annPage) return;
-    const p = annXY(e.clientX, e.clientY);
-    setAnns(a => [...a, { id: uid(), page: annPageNum, type: "text", xPct: p.x / annPage.dispW, yPct: p.y / annPage.dispH, wPct: 0.32, text: "텍스트 입력" }]);
-    setAnnTool("move");
-  };
-  const addTextCenter = () => {
+  const onAnnOverlayClick = () => { setSelectedId(null); setEditingId(null); };
+  const addText = () => {
     if (!annPage) return;
-    setAnns(a => [...a, { id: uid(), page: annPageNum, type: "text", xPct: 0.34, yPct: 0.42, wPct: 0.32, text: "텍스트 입력" }]);
-    setAnnTool("move");
+    const id = uid();
+    setAnns(a => [...a, { id, page: annPageNum, type: "text", xPct: 0.34, yPct: 0.42, wPct: 0.32, text: "" }]);
+    setAnnTool("none"); setSelectedId(id); setEditingId(id);
+    setTimeout(() => document.getElementById(`anntext-${id}`)?.focus(), 50);
   };
-  const startTextMove = (e: React.PointerEvent, id: string) => {
-    if (annTool !== "move" || !annPage) return;
-    e.stopPropagation();
+  const startTextDrag = (e: React.PointerEvent, id: string) => {
+    if (annTool !== "none" || editingId === id || !annPage) return;
     const an = anns.find(a => a.id === id) as AnnText | undefined; if (!an) return;
     const p = annXY(e.clientX, e.clientY);
-    moveRef.current = { id, dx: p.x - an.xPct * annPage.dispW, dy: p.y - an.yPct * annPage.dispH };
+    dragRef.current = { id, sx: p.x, sy: p.y, dx: p.x - an.xPct * annPage.dispW, dy: p.y - an.yPct * annPage.dispH, moved: false };
+  };
+  const beginEdit = (e: React.MouseEvent, id: string) => {
+    if (annTool !== "none") return;
+    e.stopPropagation(); setEditingId(id); setSelectedId(id);
+    setTimeout(() => document.getElementById(`anntext-${id}`)?.focus(), 30);
   };
   const updateText = (id: string, text: string) => setAnns(a => a.map(an => an.id === id ? { ...an, text } : an));
   const deleteAnn = (id: string) => setAnns(a => a.filter(x => x.id !== id));
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (tab !== "annotate" || !selectedId) return;
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === "TEXTAREA" || ae.tagName === "INPUT")) return;
+      e.preventDefault(); deleteAnn(selectedId); setSelectedId(null); setEditingId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, selectedId]);
 
   const saveAnnotated = async () => {
     if (!annBufRef.current) return;
@@ -1182,11 +1200,9 @@ export default function Home() {
             {annFile&&(
               <>
                 <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-2.5 mb-3 flex flex-wrap items-center gap-2">
-                  <div className="flex gap-1">
-                    {([["move","🖱 이동"],["text","📝 텍스트"],["highlight","🖍 형광펜"],["eraser","🧽 지우개"]] as const).map(([key,label])=>(
-                      <button key={key} onClick={()=>setAnnTool(key)} className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${annTool===key?"bg-rose-600 text-white":"text-slate-500 hover:bg-slate-100"}`}>{label}</button>
-                    ))}
-                  </div>
+                  <button onClick={addText} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 transition-colors">+ 주석 삽입</button>
+                  <button onClick={()=>setAnnTool(annTool==="highlight"?"none":"highlight")} className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${annTool==="highlight"?"bg-rose-600 text-white":"text-slate-500 hover:bg-slate-100"}`}>🖍 형광펜</button>
+                  <button onClick={()=>setAnnTool(annTool==="eraser"?"none":"eraser")} className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${annTool==="eraser"?"bg-rose-600 text-white":"text-slate-500 hover:bg-slate-100"}`}>🧽 형광펜 지우개</button>
 
                   {annTool==="highlight"&&(
                     <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-slate-200">
@@ -1195,19 +1211,10 @@ export default function Home() {
                       ))}
                     </div>
                   )}
-                  {annTool==="text"&&<span className="text-xs text-slate-400 pl-1">페이지를 클릭해 주석을 추가하세요</span>}
-                  {annTool==="eraser"&&<span className="text-xs text-slate-400 pl-1">지울 주석/형광펜을 클릭하세요</span>}
+                  {annTool==="eraser"&&<span className="text-xs text-slate-400 pl-1">지울 형광펜을 클릭하세요</span>}
+                  {annTool==="none"&&<span className="text-xs text-slate-400 pl-1">주석: 더블클릭 편집 · 드래그 이동 · 클릭 후 Delete/× 삭제</span>}
 
-                  <div className="ml-auto flex items-center gap-2">
-                    <button onClick={addTextCenter} className="text-xs font-medium text-rose-600 hover:text-rose-700 px-2 py-1.5">+ 주석 삽입</button>
-                    <div className="flex items-center gap-1 text-slate-600 px-1">
-                      <button onClick={()=>goAnnPage(annPageNum-1)} disabled={annPageNum<=1} className="w-7 h-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 font-bold">‹</button>
-                      <span className="tabular-nums text-xs w-12 text-center">{annPageNum} / {annNumPages}</span>
-                      <button onClick={()=>goAnnPage(annPageNum+1)} disabled={annPageNum>=annNumPages} className="w-7 h-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 font-bold">›</button>
-                    </div>
-                    <button onClick={()=>{setAnnFile(null);setAnnPage(null);setAnns([]);annBufRef.current=null;}} className="text-xs text-slate-400 hover:text-slate-600 px-1">다른 PDF</button>
-                    <button onClick={saveAnnotated} disabled={annSaving} className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors">{annSaving?"저장 중…":"주석 저장(PDF)"}</button>
-                  </div>
+                  <button onClick={saveAnnotated} disabled={annSaving} className="ml-auto bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors">{annSaving?"저장 중…":"주석 저장(PDF)"}</button>
                 </div>
 
                 <div className="bg-slate-100 rounded-2xl p-4 overflow-auto flex justify-center" style={{maxHeight:640}}>
@@ -1216,8 +1223,8 @@ export default function Home() {
                     <div className="relative shadow-lg bg-white shrink-0" style={{width:annPage.dispW,height:annPage.dispH}}>
                       <img src={annPage.url} alt={`page ${annPageNum}`} width={annPage.dispW} height={annPage.dispH} draggable={false} className="block select-none"/>
                       <div ref={annOverlayRef} className="absolute inset-0"
-                        style={{cursor: annTool==="highlight"?`url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26'><circle cx='13' cy='13' r='9' fill='${HL_COLORS[hlIdx].hex}' fill-opacity='0.5' stroke='#475569' stroke-width='1.5'/></svg>`)}") 13 13, crosshair`:annTool==="eraser"?"pointer":annTool==="text"?"copy":"default", touchAction:"none"}}
-                        onPointerDown={onAnnDown} onPointerMove={onAnnMove} onPointerUp={onAnnUp} onPointerLeave={onAnnUp} onClick={onAnnClickAdd}>
+                        style={{cursor: annTool==="highlight"?`url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26'><circle cx='13' cy='13' r='9' fill='${HL_COLORS[hlIdx].hex}' fill-opacity='0.5' stroke='#475569' stroke-width='1.5'/></svg>`)}") 13 13, crosshair`:annTool==="eraser"?"pointer":"default", touchAction:"none"}}
+                        onPointerDown={onAnnDown} onPointerMove={onAnnMove} onPointerUp={onAnnUp} onPointerLeave={onAnnUp} onClick={onAnnOverlayClick}>
 
                         {anns.filter(a=>a.page===annPageNum&&a.type==="hi").map(a=>{const h=a as AnnHi;return(
                           <div key={h.id} onClick={(e)=>{e.stopPropagation();if(annTool==="eraser")deleteAnn(h.id);}} className={annTool==="eraser"?"cursor-pointer hover:outline hover:outline-2 hover:outline-rose-400":""}
@@ -1228,26 +1235,31 @@ export default function Home() {
                           <div className="absolute pointer-events-none" style={{left:drawRect.x,top:drawRect.y,width:drawRect.w,height:drawRect.h,background:HL_COLORS[hlIdx].hex,opacity:0.4,mixBlendMode:"multiply",borderRadius:2}}/>
                         )}
 
-                        {anns.filter(a=>a.page===annPageNum&&a.type==="text").map(a=>{const t=a as AnnText;return(
+                        {anns.filter(a=>a.page===annPageNum&&a.type==="text").map(a=>{const t=a as AnnText;const editing=editingId===t.id;const selected=selectedId===t.id;return(
                           <div key={t.id} className="absolute group"
-                            style={{left:t.xPct*annPage.dispW,top:t.yPct*annPage.dispH,width:t.wPct*annPage.dispW,pointerEvents:annTool==="highlight"?"none":"auto",cursor:annTool==="move"?"move":"default"}}
-                            onPointerDown={(e)=>startTextMove(e,t.id)}
-                            onClick={(e)=>{e.stopPropagation();if(annTool==="eraser")deleteAnn(t.id);}}>
-                            <textarea value={t.text} onChange={(e)=>updateText(t.id,e.target.value)}
-                              onPointerDown={(e)=>{if(annTool==="text")e.stopPropagation();}} readOnly={annTool!=="text"}
-                              className="w-full resize-none rounded-md border border-amber-400 bg-amber-50/95 p-1.5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300 shadow-sm overflow-hidden"
-                              style={{fontSize:annPage.dispW*0.019,lineHeight:1.4,pointerEvents:annTool==="text"?"auto":"none"}} rows={Math.max(1,(t.text.match(/\n/g)?.length??0)+1)}/>
-                            {annTool!=="highlight"&&(
-                              <button onPointerDown={(e)=>e.stopPropagation()} onClick={(e)=>{e.stopPropagation();deleteAnn(t.id);}}
-                                className="absolute -top-2 -right-2 w-5 h-5 bg-rose-500 hover:bg-rose-600 text-white rounded-full text-xs leading-none hidden group-hover:flex items-center justify-center shadow z-10" title="삭제">×</button>
-                            )}
+                            style={{left:t.xPct*annPage.dispW,top:t.yPct*annPage.dispH,width:t.wPct*annPage.dispW,pointerEvents:annTool==="none"?"auto":"none",cursor:editing?"text":"move"}}
+                            onPointerDown={(e)=>startTextDrag(e,t.id)}
+                            onClick={(e)=>e.stopPropagation()}
+                            onDoubleClick={(e)=>beginEdit(e,t.id)}>
+                            <textarea id={`anntext-${t.id}`} value={t.text} onChange={(e)=>updateText(t.id,e.target.value)} placeholder="내용 입력"
+                              onPointerDown={(e)=>{if(editing)e.stopPropagation();}} readOnly={!editing}
+                              className={`w-full resize-none rounded-md border bg-amber-50/95 p-1.5 text-gray-800 focus:outline-none shadow-sm overflow-hidden ${selected?"border-rose-400 ring-2 ring-rose-300":"border-amber-400"}`}
+                              style={{fontSize:annPage.dispW*0.019,lineHeight:1.4,pointerEvents:editing?"auto":"none",cursor:editing?"text":"move"}} rows={Math.max(1,(t.text.match(/\n/g)?.length??0)+1)}/>
+                            <button onPointerDown={(e)=>e.stopPropagation()} onClick={(e)=>{e.stopPropagation();deleteAnn(t.id);if(selectedId===t.id){setSelectedId(null);setEditingId(null);}}}
+                              className={`absolute -top-2 -right-2 w-5 h-5 bg-rose-500 hover:bg-rose-600 text-white rounded-full text-xs leading-none items-center justify-center shadow z-10 ${selected?"flex":"hidden group-hover:flex"}`} title="삭제">×</button>
                           </div>
                         );})}
                       </div>
                     </div>
                   )}
                 </div>
-                <p className="text-xs text-slate-400 mt-2 text-center">텍스트는 이미지로, 형광펜은 도형으로 PDF에 저장됩니다 · 모든 처리는 브라우저에서 수행됩니다</p>
+
+                <div className="flex items-center justify-center gap-3 mt-3">
+                  <button onClick={()=>goAnnPage(annPageNum-1)} disabled={annPageNum<=1} className="w-9 h-9 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-30 font-bold text-slate-600">‹</button>
+                  <span className="tabular-nums text-sm text-slate-600 min-w-[88px] text-center">{annPageNum} / {annNumPages} 페이지</span>
+                  <button onClick={()=>goAnnPage(annPageNum+1)} disabled={annPageNum>=annNumPages} className="w-9 h-9 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-30 font-bold text-slate-600">›</button>
+                </div>
+                <p className="text-xs text-slate-400 mt-3 text-center">텍스트는 이미지로, 형광펜은 도형으로 PDF에 저장됩니다 · 모든 처리는 브라우저에서 수행됩니다</p>
               </>
             )}
           </div>
