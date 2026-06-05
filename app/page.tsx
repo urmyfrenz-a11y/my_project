@@ -4,12 +4,8 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { PDFDocument } from "pdf-lib";
 
 type Tab = "split" | "merge" | "edit" | "compress";
-type CompressPreset = "high" | "medium" | "low";
-const COMPRESS_PRESETS: Record<CompressPreset,{label:string;dpi:number;quality:number;desc:string}> = {
-  high:   {label:"고품질",    dpi:150, quality:0.82, desc:"인쇄·업무용"},
-  medium: {label:"표준",      dpi:110, quality:0.72, desc:"이메일·공유 (추천)"},
-  low:    {label:"최대 압축", dpi: 72, quality:0.55, desc:"모바일·웹 첨부"},
-};
+const COMPRESS_DPI = 200;
+const COMPRESS_QUALITY = 0.8;
 type SplitMode = "count" | "size" | "range";
 type EditMode = "delete" | "extract" | "insert";
 
@@ -71,7 +67,6 @@ export default function Home() {
 
   // ── compress
   const [compressFile, setCompressFile] = useState<File | null>(null);
-  const [compressPreset, setCompressPreset] = useState<CompressPreset>("medium");
   const [compressLoading, setCompressLoading] = useState(false);
   const [compressProgress, setCompressProgress] = useState(0);
   const [compressResult, setCompressResult] = useState<{blob:Blob;origMB:number;newMB:number;ratio:number;fallback:boolean}|null>(null);
@@ -81,7 +76,7 @@ export default function Home() {
 
   const compress = async () => {
     if (!compressFile || !compressBufRef.current) return;
-    const {dpi, quality} = COMPRESS_PRESETS[compressPreset];
+    const dpi = COMPRESS_DPI, quality = COMPRESS_QUALITY;
     setCompressLoading(true); setCompressError(""); setCompressResult(null); setCompressProgress(0);
     try {
       const lib = await getPdfJs();
@@ -642,28 +637,11 @@ export default function Home() {
               )}
             </div>
 
-            {/* Preset selector */}
+            {/* Compress button */}
             {compressFile&&!compressLoading&&(
               <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
-                <p className="font-semibold text-gray-700 mb-1">압축 품질 선택</p>
-                <p className="text-xs text-gray-400 mb-4">페이지를 이미지로 변환하여 압축합니다. 압축 후 텍스트 선택·검색이 되지 않을 수 있습니다.</p>
-                <div className="grid grid-cols-3 gap-3 mb-6">
-                  {(Object.entries(COMPRESS_PRESETS) as [CompressPreset, typeof COMPRESS_PRESETS[CompressPreset]][]).map(([key,p])=>(
-                    <button
-                      key={key}
-                      onClick={()=>setCompressPreset(key)}
-                      className={`rounded-xl border-2 p-4 text-left transition-all ${compressPreset===key?"border-sky-500 bg-sky-50":"border-gray-200 hover:border-sky-300"}`}
-                    >
-                      <p className={`font-semibold text-sm mb-1 ${compressPreset===key?"text-sky-700":"text-gray-700"}`}>{p.label}</p>
-                      <p className="text-xs text-gray-400 mb-2">{p.desc}</p>
-                      <p className={`text-xs font-mono ${compressPreset===key?"text-sky-500":"text-gray-400"}`}>{p.dpi}DPI · JPEG {p.quality}</p>
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={compress}
-                  className="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-3 rounded-xl transition-colors"
-                >
+                <p className="text-xs text-gray-400 mb-4">200DPI · JPEG 0.8 품질로 압축합니다. 압축 후 텍스트 선택·검색이 되지 않을 수 있습니다.</p>
+                <button onClick={compress} className="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-3 rounded-xl transition-colors">
                   PDF 압축 시작
                 </button>
               </div>
@@ -693,7 +671,7 @@ export default function Home() {
                   </div>
                   <div>
                     <p className="font-semibold text-gray-700">압축 완료</p>
-                    <p className="text-xs text-gray-400">프리셋: {COMPRESS_PRESETS[compressPreset].label}</p>
+                    <p className="text-xs text-gray-400">200DPI · JPEG 0.8</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3 mb-5">
