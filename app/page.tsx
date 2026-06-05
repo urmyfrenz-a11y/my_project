@@ -24,7 +24,7 @@ const getPdfJs = async () => {
 
 async function makeThumbs(bytes: Uint8Array): Promise<PageThumb[]> {
   const lib = await getPdfJs();
-  const doc = await lib.getDocument({ data: bytes }).promise;
+  const doc = await lib.getDocument({ data: bytes.slice() }).promise;
   const out: PageThumb[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const pg = await doc.getPage(i);
