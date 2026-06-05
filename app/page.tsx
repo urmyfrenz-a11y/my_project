@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { PDFDocument } from "pdf-lib";
 
 type Tab = "split" | "merge" | "edit";
@@ -39,6 +39,17 @@ async function makeThumbs(bytes: Uint8Array): Promise<PageThumb[]> {
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("split");
+
+  // Prevent browser from navigating to dropped files globally
+  useEffect(() => {
+    const prevent = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); };
+    window.addEventListener("dragover", prevent);
+    window.addEventListener("drop", prevent);
+    return () => {
+      window.removeEventListener("dragover", prevent);
+      window.removeEventListener("drop", prevent);
+    };
+  }, []);
 
   // ── split
   const [splitFile, setSplitFile] = useState<File | null>(null);
@@ -681,8 +692,9 @@ export default function Home() {
                   <div className="p-3 flex flex-col flex-1">
                     <div
                       className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors mb-3 ${editDragging ? "border-violet-500 bg-violet-50" : "border-violet-200 hover:border-violet-400"}`}
+                      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setEditDragging(true); }}
                       onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setEditDragging(true); }}
-                      onDragLeave={(e) => { e.stopPropagation(); setEditDragging(false); }}
+                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setEditDragging(false); }}
                       onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setEditDragging(false); const f = e.dataTransfer.files?.[0]; if (f?.type === "application/pdf") loadEditFile(f); }}
                       onClick={() => document.getElementById("editInput")?.click()}
                     >
@@ -740,8 +752,9 @@ export default function Home() {
                   <div className="p-3 flex flex-col flex-1">
                     <div
                       className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors mb-3 ${srcDragging ? "border-violet-500 bg-violet-50" : "border-violet-200 hover:border-violet-400"}`}
+                      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setSrcDragging(true); }}
                       onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setSrcDragging(true); }}
-                      onDragLeave={(e) => { e.stopPropagation(); setSrcDragging(false); }}
+                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setSrcDragging(false); }}
                       onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setSrcDragging(false); const f = e.dataTransfer.files?.[0]; if (f?.type === "application/pdf") loadSrcFile(f); }}
                       onClick={() => document.getElementById("srcInput")?.click()}
                     >
