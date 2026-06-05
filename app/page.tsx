@@ -3,7 +3,13 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { PDFDocument } from "pdf-lib";
 
-type Tab = "split" | "merge" | "edit";
+type Tab = "split" | "merge" | "edit" | "compress";
+type CompressPreset = "high" | "medium" | "low";
+const COMPRESS_PRESETS: Record<CompressPreset,{label:string;dpi:number;quality:number;desc:string}> = {
+  high:   {label:"고품질",    dpi:200, quality:0.85, desc:"인쇄·업무용"},
+  medium: {label:"표준",      dpi:150, quality:0.75, desc:"이메일·공유 (추천)"},
+  low:    {label:"최대 압축", dpi:100, quality:0.60, desc:"모바일·웹 첨부"},
+};
 type SplitMode = "count" | "size" | "range";
 type EditMode = "delete" | "extract" | "insert";
 
@@ -62,6 +68,62 @@ export default function Home() {
   const [splitError, setSplitError] = useState("");
   const [splitDragging, setSplitDragging] = useState(false);
   const splitBufRef = useRef<ArrayBuffer | null>(null);
+
+  // ── compress
+  const [compressFile, setCompressFile] = useState<File | null>(null);
+  const [compressPreset, setCompressPreset] = useState<CompressPreset>("medium");
+  const [compressLoading, setCompressLoading] = useState(false);
+  const [compressProgress, setCompressProgress] = useState(0);
+  const [compressResult, setCompressResult] = useState<{blob:Blob;origMB:number;newMB:number;ratio:number}|null>(null);
+  const [compressError, setCompressError] = useState("");
+  const [compressDragging, setCompressDragging] = useState(false);
+  const compressBufRef = useRef<ArrayBuffer | null>(null);
+
+  const compress = async () => {
+    if (!compressFile || !compressBufRef.current) return;
+    const {dpi, quality} = COMPRESS_PRESETS[compressPreset];
+    setCompressLoading(true); setCompressError(""); setCompressResult(null); setCompressProgress(0);
+    try {
+      const lib = await getPdfJs();
+      const origBuf = compressBufRef.current;
+      const pdfDoc = await lib.getDocument({data: origBuf.slice()}).promise;
+      const numPages = pdfDoc.numPages;
+      const newPdf = await PDFDocument.create();
+      const scale = dpi / 72;
+      for (let i = 1; i <= numPages; i++) {
+        setCompressProgress(Math.round((i-1)/numPages*100));
+        const pg = await pdfDoc.getPage(i);
+        const vp = pg.getViewport({scale});
+        const canvas = document.createElement("canvas");
+        canvas.width = vp.width; canvas.height = vp.height;
+        await pg.render({canvasContext: canvas.getContext("2d")!, viewport: vp}).promise;
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        const base64 = dataUrl.split(",")[1];
+        const imgBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+        const img = await newPdf.embedJpg(imgBytes);
+        const page = newPdf.addPage([vp.width, vp.height]);
+        page.drawImage(img, {x:0, y:0, width:vp.width, height:vp.height});
+      }
+      setCompressProgress(100);
+      // Method 2: save with object streams for additional compression
+      const saved = await newPdf.save({useObjectStreams: true});
+      const origMB = origBuf.byteLength / 1024 / 1024;
+      const newMB = saved.length / 1024 / 1024;
+      const ratio = Math.round((1 - newMB / origMB) * 100);
+      setCompressResult({
+        blob: new Blob([saved.buffer as ArrayBuffer], {type:"application/pdf"}),
+        origMB, newMB, ratio,
+      });
+    } catch(e) { setCompressError("압축 중 오류: " + (e as Error).message); }
+    finally { setCompressLoading(false); }
+  };
+  const downloadCompressed = () => {
+    if (!compressResult || !compressFile) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(compressResult.blob);
+    a.download = `${compressFile.name.replace(/\.pdf$/i,"")}_압축.pdf`;
+    a.click();
+  };
 
   // ── merge
   const [mergeFiles, setMergeFiles] = useState<MergeFile[]>([]);
@@ -282,8 +344,8 @@ export default function Home() {
         </div>
 
         <div className="flex bg-white rounded-2xl shadow-sm p-1.5 mb-6 gap-1.5">
-          {([  ["split","✂️ PDF 분할","indigo"],["merge","🔗 PDF 합치기","emerald"],["edit","✏️ 페이지 편집","violet"] ] as const).map(([key,label,color])=>(
-            <button key={key} onClick={()=>setTab(key)} className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${tab===key ? color==="indigo"?"bg-indigo-600 text-white shadow-sm":color==="emerald"?"bg-emerald-600 text-white shadow-sm":"bg-violet-600 text-white shadow-sm" : color==="indigo"?"text-gray-500 hover:text-indigo-600":color==="emerald"?"text-gray-500 hover:text-emerald-600":"text-gray-500 hover:text-violet-600"}`}>{label}</button>
+          {([["split","✂️ PDF 분할","indigo"],["merge","🔗 PDF 합치기","emerald"],["edit","✏️ 페이지 편집","violet"],["compress","🗜️ PDF 압축","sky"]] as const).map(([key,label,color])=>(
+            <button key={key} onClick={()=>setTab(key)} className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${tab===key ? color==="indigo"?"bg-indigo-600 text-white shadow-sm":color==="emerald"?"bg-emerald-600 text-white shadow-sm":color==="sky"?"bg-sky-600 text-white shadow-sm":"bg-violet-600 text-white shadow-sm" : color==="indigo"?"text-gray-500 hover:text-indigo-600":color==="emerald"?"text-gray-500 hover:text-emerald-600":color==="sky"?"text-gray-500 hover:text-sky-600":"text-gray-500 hover:text-violet-600"}`}>{label}</button>
           ))}
         </div>
 
@@ -532,6 +594,113 @@ export default function Home() {
               </div>
             )}
           </>
+        )}
+
+        {tab==="compress" && (
+          <div className="max-w-2xl mx-auto">
+            {/* Upload area */}
+            <div
+              className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-colors mb-6 ${compressDragging?"border-sky-500 bg-sky-50":"border-sky-300 bg-white hover:border-sky-500"}`}
+              onDragOver={e=>{e.preventDefault();setCompressDragging(true);}}
+              onDragLeave={()=>setCompressDragging(false)}
+              onDrop={e=>{e.preventDefault();setCompressDragging(false);const f=e.dataTransfer.files?.[0];if(f?.type==="application/pdf"){setCompressFile(f);setCompressResult(null);setCompressError("");compressBufRef.current=null;f.arrayBuffer().then(b=>{compressBufRef.current=b;});}else setCompressError("PDF 파일만 업로드할 수 있습니다.");}}
+              onClick={()=>document.getElementById("compressInput")?.click()}
+            >
+              <input id="compressInput" type="file" accept="application/pdf" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f){setCompressFile(f);setCompressResult(null);setCompressError("");compressBufRef.current=null;f.arrayBuffer().then(b=>{compressBufRef.current=b;});}e.currentTarget.value="";}}/>
+              {compressFile?(
+                <div>
+                  <p className="text-sky-700 font-semibold text-lg">{compressFile.name}</p>
+                  <p className="text-gray-400 text-sm mt-1">{(compressFile.size/1024/1024).toFixed(2)} MB · 클릭하여 다른 파일 선택</p>
+                </div>
+              ):(
+                <div>
+                  <svg className="mx-auto mb-3 w-12 h-12 text-sky-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                  <p className="text-gray-500">PDF 파일을 드래그하거나 클릭하여 업로드</p>
+                </div>
+              )}
+            </div>
+
+            {/* Preset selector */}
+            {compressFile&&!compressLoading&&(
+              <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
+                <p className="font-semibold text-gray-700 mb-1">압축 품질 선택</p>
+                <p className="text-xs text-gray-400 mb-4">페이지를 이미지로 변환하여 압축합니다. 압축 후 텍스트 선택·검색이 되지 않을 수 있습니다.</p>
+                <div className="grid grid-cols-3 gap-3 mb-6">
+                  {(Object.entries(COMPRESS_PRESETS) as [CompressPreset, typeof COMPRESS_PRESETS[CompressPreset]][]).map(([key,p])=>(
+                    <button
+                      key={key}
+                      onClick={()=>setCompressPreset(key)}
+                      className={`rounded-xl border-2 p-4 text-left transition-all ${compressPreset===key?"border-sky-500 bg-sky-50":"border-gray-200 hover:border-sky-300"}`}
+                    >
+                      <p className={`font-semibold text-sm mb-1 ${compressPreset===key?"text-sky-700":"text-gray-700"}`}>{p.label}</p>
+                      <p className="text-xs text-gray-400 mb-2">{p.desc}</p>
+                      <p className={`text-xs font-mono ${compressPreset===key?"text-sky-500":"text-gray-400"}`}>{p.dpi}DPI · JPEG {p.quality}</p>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={compress}
+                  className="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-3 rounded-xl transition-colors"
+                >
+                  PDF 압축 시작
+                </button>
+              </div>
+            )}
+
+            {/* Progress */}
+            {compressLoading&&(
+              <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
+                <div className="flex items-center gap-3 mb-3">
+                  <svg className="animate-spin w-5 h-5 text-sky-600 shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                  <span className="text-sm font-medium text-gray-700">압축 중… {compressProgress}%</span>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-2">
+                  <div className="bg-sky-500 h-2 rounded-full transition-all duration-300" style={{width:`${compressProgress}%`}}/>
+                </div>
+              </div>
+            )}
+
+            {compressError&&<div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 mb-6 text-sm">{compressError}</div>}
+
+            {/* Result */}
+            {compressResult&&(
+              <div className="bg-white rounded-2xl shadow-sm p-6">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-10 h-10 bg-sky-100 rounded-xl flex items-center justify-center shrink-0">
+                    <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-700">압축 완료</p>
+                    <p className="text-xs text-gray-400">프리셋: {COMPRESS_PRESETS[compressPreset].label}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3 mb-5">
+                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                    <p className="text-xs text-gray-400 mb-1">원본 크기</p>
+                    <p className="font-semibold text-gray-700">{compressResult.origMB.toFixed(2)} MB</p>
+                  </div>
+                  <div className="bg-sky-50 rounded-xl p-3 text-center">
+                    <p className="text-xs text-sky-500 mb-1">압축 후</p>
+                    <p className="font-semibold text-sky-700">{compressResult.newMB.toFixed(2)} MB</p>
+                  </div>
+                  <div className={`rounded-xl p-3 text-center ${compressResult.ratio>0?"bg-emerald-50":"bg-orange-50"}`}>
+                    <p className={`text-xs mb-1 ${compressResult.ratio>0?"text-emerald-500":"text-orange-400"}`}>감소율</p>
+                    <p className={`font-bold text-lg ${compressResult.ratio>0?"text-emerald-600":"text-orange-500"}`}>
+                      {compressResult.ratio>0?`-${compressResult.ratio}%`:`+${Math.abs(compressResult.ratio)}%`}
+                    </p>
+                  </div>
+                </div>
+                {compressResult.ratio<=0&&(
+                  <div className="bg-orange-50 border border-orange-200 text-orange-700 rounded-xl px-4 py-3 text-xs mb-4">
+                    원본이 이미 잘 압축된 파일이거나 텍스트 위주 PDF입니다. 더 낮은 품질 프리셋을 시도해보세요.
+                  </div>
+                )}
+                <button onClick={downloadCompressed} className="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-3 rounded-xl transition-colors">
+                  압축 파일 다운로드
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
       </div>
