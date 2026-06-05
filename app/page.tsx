@@ -531,7 +531,7 @@ export default function Home() {
                 ["insert", "➕ 페이지 삽입", "violet"],
               ] as const).map(([key, label, color]) => (
                 <button key={key}
-                  onClick={() => { setEditMode(key); setSelPages(new Set()); }}
+                  onClick={() => { setEditMode(key); setSelPages(new Set()); setEditFile(null); setEditThumbs([]); editBytesRef.current = null; setUndoStack([]); setEditError(""); setSrcFile(null); setSrcThumbs([]); setDragPage(null); setDropAfter(null); }}
                   className={`flex-1 py-2 rounded-xl font-semibold text-sm transition-colors ${
                     editMode === key
                       ? color === "rose" ? "bg-rose-600 text-white" : color === "blue" ? "bg-blue-600 text-white" : "bg-violet-600 text-white"
