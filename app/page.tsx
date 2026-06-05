@@ -265,8 +265,11 @@ export default function Home() {
 
   const saveEdited = () => {
     if (!editBytesRef.current || !editFile) return;
+    const bytes = editBytesRef.current;
+    const ab = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(ab).set(bytes);
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([editBytesRef.current], { type: "application/pdf" }));
+    a.href = URL.createObjectURL(new Blob([ab], { type: "application/pdf" }));
     a.download = `${editFile.name.replace(/\.pdf$/i, "")}_편집.pdf`; a.click();
   };
 
@@ -682,7 +685,7 @@ export default function Home() {
                           dragPage !== null ? "h-7 bg-violet-50 border border-dashed border-violet-300 text-violet-400 cursor-pointer hover:bg-violet-100" :
                           "h-2"
                         }`}>
-                        {dropAfter === 0 ? "여기에 삽입" : dragPage !== null ? "맸 앞에 삽입" : ""}
+                        {dropAfter === 0 ? "여기에 삽입" : dragPage !== null ? "맨 앞에 삽입" : ""}
                       </div>
                       {editThumbs.map((t) => (
                         <div key={t.pageNum}>
