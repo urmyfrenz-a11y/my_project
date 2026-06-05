@@ -367,7 +367,7 @@ export default function Home() {
         </div>
 
         {tab==="split" && (
-          <div className="max-w-2xl mx-auto">
+          <div>
             <div className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-colors mb-6 ${splitDragging?"border-indigo-500 bg-indigo-50":"border-indigo-300 bg-white hover:border-indigo-500"}`}
               onDragOver={e=>{e.preventDefault();setSplitDragging(true);}} onDragLeave={()=>setSplitDragging(false)} onDrop={onSplitDrop} onClick={()=>document.getElementById("splitInput")?.click()}>
               <input id="splitInput" type="file" accept="application/pdf" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)loadSplitFile(f);}}/>
@@ -388,7 +388,7 @@ export default function Home() {
         )}
 
         {tab==="merge" && (
-          <div className="max-w-2xl mx-auto">
+          <div>
             <div className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors mb-4 ${mergeDragging?"border-emerald-500 bg-emerald-50":"border-emerald-300 bg-white hover:border-emerald-500"}`}
               onDragOver={e=>{e.preventDefault();setMergeDragging(true);}} onDragLeave={()=>setMergeDragging(false)} onDrop={onMergeDrop} onClick={()=>document.getElementById("mergeInput")?.click()}>
               <input id="mergeInput" type="file" accept="application/pdf" multiple className="hidden" onChange={e=>{if(e.target.files)addMergeFiles(e.target.files);e.target.value="";}}/>
@@ -614,7 +614,7 @@ export default function Home() {
         )}
 
         {tab==="compress" && (
-          <div className="max-w-2xl mx-auto">
+          <div>
             {/* Upload area */}
             <div
               className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-colors mb-6 ${compressDragging?"border-sky-500 bg-sky-50":"border-sky-300 bg-white hover:border-sky-500"}`}
