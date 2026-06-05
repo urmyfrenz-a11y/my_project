@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, rgb, BlendMode } from "pdf-lib";
 
-type Tab = "split" | "merge" | "edit" | "compress" | "convert";
+type Tab = "split" | "merge" | "edit" | "compress" | "convert" | "annotate";
 type MdTemplate = "basic" | "report" | "proposal" | "lecture" | "minutes";
+type AnnTool = "move" | "text" | "highlight" | "eraser";
+interface AnnText { id: string; page: number; type: "text"; xPct: number; yPct: number; wPct: number; text: string; }
+interface AnnHi { id: string; page: number; type: "hi"; xPct: number; yPct: number; wPct: number; hPct: number; hex: string; }
+type Ann = AnnText | AnnHi;
 const COMPRESS_DPI = 150;
 const COMPRESS_QUALITY = 0.7;
 type SplitMode = "count" | "size" | "range";
@@ -59,6 +63,20 @@ const TAB_COLORS: Record<string, { active: string; idle: string }> = {
   violet:  { active: "bg-violet-600 text-white shadow-sm",  idle: "text-slate-500 hover:text-violet-600" },
   sky:     { active: "bg-sky-600 text-white shadow-sm",     idle: "text-slate-500 hover:text-sky-600" },
   amber:   { active: "bg-amber-500 text-white shadow-sm",   idle: "text-slate-500 hover:text-amber-600" },
+  rose:    { active: "bg-rose-600 text-white shadow-sm",    idle: "text-slate-500 hover:text-rose-600" },
+};
+
+const HL_COLORS = [
+  { name: "노랑", hex: "#facc15" },
+  { name: "초록", hex: "#4ade80" },
+  { name: "분홍", hex: "#f472b6" },
+  { name: "파랑", hex: "#60a5fa" },
+  { name: "주황", hex: "#fb923c" },
+];
+const uid = () => Math.random().toString(36).slice(2, 9);
+const hexToRgb01 = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 };
 };
 
 const MD_TEMPLATES: { key: MdTemplate; label: string }[] = [
@@ -389,6 +407,146 @@ export default function Home() {
     a.download = `${(pdfMdFile?.name ?? "document").replace(/\.pdf$/i, "")}.md`; a.click();
   };
 
+  // ── annotate (텍스트 주석 + 형광펜)
+  const [annFile, setAnnFile] = useState<File | null>(null);
+  const annBufRef = useRef<ArrayBuffer | null>(null);
+  const [annPageNum, setAnnPageNum] = useState(1);
+  const [annNumPages, setAnnNumPages] = useState(0);
+  const [annPage, setAnnPage] = useState<{ url: string; dispW: number; dispH: number; pw: number; ph: number } | null>(null);
+  const [annLoading, setAnnLoading] = useState(false);
+  const [annError, setAnnError] = useState("");
+  const [annDragOver, setAnnDragOver] = useState(false);
+  const [annTool, setAnnTool] = useState<AnnTool>("move");
+  const [hlIdx, setHlIdx] = useState(0);
+  const [anns, setAnns] = useState<Ann[]>([]);
+  const [annSaving, setAnnSaving] = useState(false);
+  const [drawRect, setDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const annOverlayRef = useRef<HTMLDivElement | null>(null);
+  const drawStartRef = useRef<{ x: number; y: number } | null>(null);
+  const moveRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
+
+  const renderAnnPage = async (pageNum: number) => {
+    if (!annBufRef.current) return;
+    setAnnLoading(true); setAnnError("");
+    try {
+      const lib = await getPdfJs();
+      const doc = await lib.getDocument({ data: annBufRef.current.slice(0) }).promise;
+      const page = await doc.getPage(pageNum);
+      const base = page.getViewport({ scale: 1 });
+      const dispW = Math.min(820, base.width);
+      const vp = page.getViewport({ scale: (dispW / base.width) * 2 });
+      const canvas = document.createElement("canvas");
+      canvas.width = vp.width; canvas.height = vp.height;
+      await page.render({ canvasContext: canvas.getContext("2d")!, viewport: vp }).promise;
+      setAnnPage({ url: canvas.toDataURL("image/jpeg", 0.9), dispW, dispH: dispW * base.height / base.width, pw: base.width, ph: base.height });
+    } catch { setAnnError("페이지를 렌더링하지 못했습니다."); }
+    finally { setAnnLoading(false); }
+  };
+
+  const loadAnnFile = async (f: File) => {
+    if (f.type !== "application/pdf") { setAnnError("PDF 파일만 업로드할 수 있습니다."); return; }
+    setAnnFile(f); setAnns([]); setAnnError(""); setAnnTool("move"); setAnnLoading(true);
+    try {
+      const buf = await f.arrayBuffer(); annBufRef.current = buf;
+      const lib = await getPdfJs();
+      const doc = await lib.getDocument({ data: buf.slice(0) }).promise;
+      setAnnNumPages(doc.numPages); setAnnPageNum(1);
+      await renderAnnPage(1);
+    } catch { setAnnError("PDF를 읽을 수 없습니다."); }
+    finally { setAnnLoading(false); }
+  };
+
+  const goAnnPage = (n: number) => {
+    if (!annNumPages) return;
+    const p = Math.max(1, Math.min(annNumPages, n));
+    setAnnPageNum(p); setDrawRect(null); drawStartRef.current = null; renderAnnPage(p);
+  };
+
+  const annXY = (clientX: number, clientY: number) => {
+    const r = annOverlayRef.current!.getBoundingClientRect();
+    return { x: clientX - r.left, y: clientY - r.top };
+  };
+
+  const onAnnDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (annTool !== "highlight" || !annPage) return;
+    const p = annXY(e.clientX, e.clientY); drawStartRef.current = p; setDrawRect({ x: p.x, y: p.y, w: 0, h: 0 });
+    annOverlayRef.current?.setPointerCapture(e.pointerId);
+  };
+  const onAnnMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!annPage) return;
+    if (annTool === "highlight" && drawStartRef.current) {
+      const p = annXY(e.clientX, e.clientY); const s = drawStartRef.current;
+      setDrawRect({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) });
+    } else if (moveRef.current) {
+      const p = annXY(e.clientX, e.clientY); const m = moveRef.current;
+      setAnns(a => a.map(an => an.id === m.id ? { ...an, xPct: (p.x - m.dx) / annPage.dispW, yPct: (p.y - m.dy) / annPage.dispH } : an));
+    }
+  };
+  const onAnnUp = () => {
+    if (annTool === "highlight" && drawStartRef.current && drawRect && annPage) {
+      if (drawRect.w > 6 && drawRect.h > 3) {
+        setAnns(a => [...a, { id: uid(), page: annPageNum, type: "hi", xPct: drawRect.x / annPage.dispW, yPct: drawRect.y / annPage.dispH, wPct: drawRect.w / annPage.dispW, hPct: drawRect.h / annPage.dispH, hex: HL_COLORS[hlIdx].hex }]);
+      }
+      drawStartRef.current = null; setDrawRect(null);
+    }
+    moveRef.current = null;
+  };
+  const onAnnClickAdd = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (annTool !== "text" || !annPage) return;
+    const p = annXY(e.clientX, e.clientY);
+    setAnns(a => [...a, { id: uid(), page: annPageNum, type: "text", xPct: p.x / annPage.dispW, yPct: p.y / annPage.dispH, wPct: 0.32, text: "텍스트 입력" }]);
+    setAnnTool("move");
+  };
+  const addTextCenter = () => {
+    if (!annPage) return;
+    setAnns(a => [...a, { id: uid(), page: annPageNum, type: "text", xPct: 0.34, yPct: 0.42, wPct: 0.32, text: "텍스트 입력" }]);
+    setAnnTool("move");
+  };
+  const startTextMove = (e: React.PointerEvent, id: string) => {
+    if (annTool === "eraser" || annTool === "highlight" || !annPage) return;
+    e.stopPropagation();
+    const an = anns.find(a => a.id === id) as AnnText | undefined; if (!an) return;
+    const p = annXY(e.clientX, e.clientY);
+    moveRef.current = { id, dx: p.x - an.xPct * annPage.dispW, dy: p.y - an.yPct * annPage.dispH };
+    annOverlayRef.current?.setPointerCapture(e.pointerId);
+  };
+  const updateText = (id: string, text: string) => setAnns(a => a.map(an => an.id === id ? { ...an, text } : an));
+
+  const saveAnnotated = async () => {
+    if (!annBufRef.current) return;
+    setAnnSaving(true); setAnnError("");
+    try {
+      const pdfDoc = await PDFDocument.load(annBufRef.current.slice(0));
+      const pages = pdfDoc.getPages();
+      const html2canvas = await getHtml2Canvas();
+      for (const an of anns) {
+        const page = pages[an.page - 1]; if (!page) continue;
+        const { width: pw, height: ph } = page.getSize();
+        if (an.type === "hi") {
+          const c = hexToRgb01(an.hex);
+          page.drawRectangle({ x: an.xPct * pw, y: ph - (an.yPct + an.hPct) * ph, width: an.wPct * pw, height: an.hPct * ph, color: rgb(c.r, c.g, c.b), opacity: 0.4, blendMode: BlendMode.Multiply });
+        } else {
+          const R = 3;
+          const div = document.createElement("div");
+          div.style.cssText = `position:absolute;left:-10000px;top:0;width:${an.wPct * pw * R}px;padding:${pw * 0.008 * R}px ${pw * 0.011 * R}px;font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:${pw * 0.019 * R}px;line-height:1.4;color:#111827;background:rgba(254,243,199,0.96);border:1px solid #f59e0b;border-radius:6px;white-space:pre-wrap;word-break:break-word;`;
+          div.textContent = an.text || " ";
+          document.body.appendChild(div);
+          const canvas = await html2canvas(div, { scale: 1, backgroundColor: null });
+          document.body.removeChild(div);
+          const png = await pdfDoc.embedPng(canvas.toDataURL("image/png"));
+          const wPt = an.wPct * pw;
+          const hPt = wPt * (canvas.height / canvas.width);
+          page.drawImage(png, { x: an.xPct * pw, y: ph - an.yPct * ph - hPt, width: wPt, height: hPt });
+        }
+      }
+      const bytes = await pdfDoc.save();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" }));
+      a.download = `${(annFile?.name ?? "document").replace(/\.pdf$/i, "")}_주석.pdf`; a.click();
+    } catch (e) { setAnnError("저장 중 오류: " + (e as Error).message); }
+    finally { setAnnSaving(false); }
+  };
+
   const resetEditState = () => {
     setSelPages(new Set()); setEditFile(null); setEditThumbs([]);
     editBytesRef.current = null; setUndoStack([]); setEditError("");
@@ -586,7 +744,7 @@ export default function Home() {
         </header>
 
         <div className="flex bg-white border border-slate-200 rounded-2xl shadow-sm p-1.5 mb-6 gap-1.5">
-          {([["split","✂️ PDF 분할","indigo"],["merge","🔗 PDF 합치기","emerald"],["edit","✏️ 페이지 편집","violet"],["compress","🗜️ PDF 압축","sky"],["convert","🔄 파일 변환","amber"]] as const).map(([key,label,color])=>(
+          {([["split","✂️ PDF 분할","indigo"],["merge","🔗 PDF 합치기","emerald"],["edit","✏️ 페이지 편집","violet"],["compress","🗜️ PDF 압축","sky"],["convert","🔄 파일 변환","amber"],["annotate","🖍️ 주석","rose"]] as const).map(([key,label,color])=>(
             <button key={key} onClick={()=>setTab(key)} className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${tab===key?TAB_COLORS[color].active:TAB_COLORS[color].idle}`}>{label}</button>
           ))}
         </div>
@@ -1002,6 +1160,95 @@ export default function Home() {
                   </div>
                 )}
               </div>
+            )}
+          </div>
+        )}
+
+        {tab==="annotate" && (
+          <div>
+            {!annFile && (
+              <div className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-colors ${annDragOver?"border-rose-500 bg-rose-50":"border-rose-300 bg-white hover:border-rose-500"}`}
+                onDragOver={e=>{e.preventDefault();setAnnDragOver(true);}} onDragLeave={()=>setAnnDragOver(false)}
+                onDrop={e=>{e.preventDefault();setAnnDragOver(false);const f=e.dataTransfer.files?.[0];if(f)loadAnnFile(f);}}
+                onClick={()=>document.getElementById("annInput")?.click()}>
+                <input id="annInput" type="file" accept="application/pdf" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)loadAnnFile(f);e.currentTarget.value="";}}/>
+                <svg className="mx-auto mb-3 w-12 h-12 text-rose-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                <p className="text-gray-500">주석을 추가할 PDF를 드래그하거나 클릭하여 업로드</p>
+                <p className="text-gray-400 text-xs mt-1">텍스트 주석과 형광펜 마킹을 추가해 새 PDF로 저장합니다</p>
+              </div>
+            )}
+
+            {annError&&<div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 mb-3 text-sm">{annError}</div>}
+
+            {annFile&&(
+              <>
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-2.5 mb-3 flex flex-wrap items-center gap-2">
+                  <div className="flex gap-1">
+                    {([["move","🖱 이동"],["text","📝 텍스트"],["highlight","🖍 형광펜"],["eraser","🧽 지우개"]] as const).map(([key,label])=>(
+                      <button key={key} onClick={()=>setAnnTool(key)} className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${annTool===key?"bg-rose-600 text-white":"text-slate-500 hover:bg-slate-100"}`}>{label}</button>
+                    ))}
+                  </div>
+
+                  {annTool==="highlight"&&(
+                    <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-slate-200">
+                      {HL_COLORS.map((c,i)=>(
+                        <button key={c.hex} onClick={()=>setHlIdx(i)} title={c.name} className={`w-5 h-5 rounded-full transition-transform ${hlIdx===i?"ring-2 ring-offset-1 ring-slate-400 scale-110":"border border-slate-200"}`} style={{background:c.hex}}/>
+                      ))}
+                    </div>
+                  )}
+                  {annTool==="text"&&<span className="text-xs text-slate-400 pl-1">페이지를 클릭해 주석을 추가하세요</span>}
+                  {annTool==="eraser"&&<span className="text-xs text-slate-400 pl-1">지울 주석/형광펜을 클릭하세요</span>}
+
+                  <div className="ml-auto flex items-center gap-2">
+                    <button onClick={addTextCenter} className="text-xs font-medium text-rose-600 hover:text-rose-700 px-2 py-1.5">+ 주석 삽입</button>
+                    <div className="flex items-center gap-1 text-slate-600 px-1">
+                      <button onClick={()=>goAnnPage(annPageNum-1)} disabled={annPageNum<=1} className="w-7 h-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 font-bold">‹</button>
+                      <span className="tabular-nums text-xs w-12 text-center">{annPageNum} / {annNumPages}</span>
+                      <button onClick={()=>goAnnPage(annPageNum+1)} disabled={annPageNum>=annNumPages} className="w-7 h-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 font-bold">›</button>
+                    </div>
+                    <button onClick={()=>{setAnnFile(null);setAnnPage(null);setAnns([]);annBufRef.current=null;}} className="text-xs text-slate-400 hover:text-slate-600 px-1">다른 PDF</button>
+                    <button onClick={saveAnnotated} disabled={annSaving} className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors">{annSaving?"저장 중…":"주석 저장(PDF)"}</button>
+                  </div>
+                </div>
+
+                <div className="bg-slate-100 rounded-2xl p-4 overflow-auto flex justify-center" style={{maxHeight:640}}>
+                  {annLoading&&!annPage&&<div className="py-20 text-sm text-slate-400">불러오는 중…</div>}
+                  {annPage&&(
+                    <div className="relative shadow-lg bg-white shrink-0" style={{width:annPage.dispW,height:annPage.dispH}}>
+                      <img src={annPage.url} alt={`page ${annPageNum}`} width={annPage.dispW} height={annPage.dispH} draggable={false} className="block select-none"/>
+                      <div ref={annOverlayRef} className="absolute inset-0"
+                        style={{cursor: annTool==="highlight"?"crosshair":annTool==="eraser"?"pointer":annTool==="text"?"copy":"default", touchAction:"none"}}
+                        onPointerDown={onAnnDown} onPointerMove={onAnnMove} onPointerUp={onAnnUp} onClick={onAnnClickAdd}>
+
+                        {anns.filter(a=>a.page===annPageNum&&a.type==="hi").map(a=>{const h=a as AnnHi;return(
+                          <div key={h.id} onClick={(e)=>{e.stopPropagation();if(annTool==="eraser")setAnns(prev=>prev.filter(x=>x.id!==h.id));}} className={annTool==="eraser"?"cursor-pointer hover:outline hover:outline-2 hover:outline-rose-400":""}
+                            style={{position:"absolute",left:h.xPct*annPage.dispW,top:h.yPct*annPage.dispH,width:h.wPct*annPage.dispW,height:h.hPct*annPage.dispH,background:h.hex,opacity:0.4,mixBlendMode:"multiply",borderRadius:2}}/>
+                        );})}
+
+                        {drawRect&&annTool==="highlight"&&(
+                          <div className="absolute pointer-events-none" style={{left:drawRect.x,top:drawRect.y,width:drawRect.w,height:drawRect.h,background:HL_COLORS[hlIdx].hex,opacity:0.4,mixBlendMode:"multiply",borderRadius:2}}/>
+                        )}
+
+                        {anns.filter(a=>a.page===annPageNum&&a.type==="text").map(a=>{const t=a as AnnText;return(
+                          <div key={t.id} className="absolute" style={{left:t.xPct*annPage.dispW,top:t.yPct*annPage.dispH,width:t.wPct*annPage.dispW}}
+                            onClick={(e)=>{e.stopPropagation();if(annTool==="eraser")setAnns(prev=>prev.filter(x=>x.id!==t.id));}}>
+                            {annTool!=="eraser"&&(
+                              <div onPointerDown={(e)=>startTextMove(e,t.id)} className="absolute -top-5 left-0 right-0 h-5 bg-amber-400 rounded-t-md cursor-move flex items-center justify-between px-1.5 text-white text-[10px] select-none">
+                                <span>⠿ 이동</span>
+                                <button onClick={(e)=>{e.stopPropagation();setAnns(prev=>prev.filter(x=>x.id!==t.id));}} className="hover:bg-amber-500 rounded px-1 leading-none">×</button>
+                              </div>
+                            )}
+                            <textarea value={t.text} onChange={(e)=>updateText(t.id,e.target.value)} onPointerDown={e=>e.stopPropagation()} readOnly={annTool==="eraser"}
+                              className="w-full resize-none rounded-b-md rounded-tr-md border border-amber-400 bg-amber-50/95 p-1.5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300 shadow-sm overflow-hidden"
+                              style={{fontSize:annPage.dispW*0.019,lineHeight:1.4}} rows={Math.max(1,(t.text.match(/\n/g)?.length??0)+1)}/>
+                          </div>
+                        );})}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-slate-400 mt-2 text-center">텍스트는 이미지로, 형광펜은 도형으로 PDF에 저장됩니다 · 모든 처리는 브라우저에서 수행됩니다</p>
+              </>
             )}
           </div>
         )}
