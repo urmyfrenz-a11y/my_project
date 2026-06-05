@@ -40,7 +40,6 @@ async function makeThumbs(bytes: Uint8Array): Promise<PageThumb[]> {
 export default function Home() {
   const [tab, setTab] = useState<Tab>("split");
 
-  // Prevent browser from navigating to dropped files globally
   useEffect(() => {
     const prevent = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); };
     window.addEventListener("dragover", prevent);
@@ -81,14 +80,14 @@ export default function Home() {
   const [selPages, setSelPages] = useState<Set<number>>(new Set());
   const editBytesRef = useRef<Uint8Array | null>(null);
   const [undoStack, setUndoStack] = useState<Uint8Array[]>([]);
-  // insert sub-state
   const [srcFile, setSrcFile] = useState<File | null>(null);
   const [srcThumbs, setSrcThumbs] = useState<PageThumb[]>([]);
   const [srcLoading, setSrcLoading] = useState(false);
   const [srcDragging, setSrcDragging] = useState(false);
   const [selSrcPages, setSelSrcPages] = useState<Set<number>>(new Set());
-  const [dropZoneIndex, setDropZoneIndex] = useState<number | null>(null); // 0=before p1, n=after pN
-  const dragPayloadRef = useRef<Set<number>>(new Set()); // pages being dragged
+  // dropZoneIndex: page number (1-based) to insert BEFORE; editThumbs.length+1 = append at end
+  const [dropZoneIndex, setDropZoneIndex] = useState<number | null>(null);
+  const dragPayloadRef = useRef<Set<number>>(new Set());
 
   const resetEditState = () => {
     setSelPages(new Set()); setEditFile(null); setEditThumbs([]);
@@ -292,7 +291,8 @@ export default function Home() {
     a.download = `${editFile.name.replace(/\.pdf$/i, "")}_편집.pdf`; a.click();
   };
 
-  // afterN: 0 = before page 1, n = after page n
+  // afterN: insert before page (afterN+1), i.e. at 0-based position afterN
+  // afterN=0 => before page 1; afterN=editThumbs.length => append at end
   const applyInsert = async (afterN: number, pages: Set<number>) => {
     if (!editBytesRef.current || !srcFile || !pages.size) return;
     const prev = editBytesRef.current;
@@ -311,7 +311,6 @@ export default function Home() {
     finally { setEditLoading(false); }
   };
 
-  // ── RENDER
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
       <div className="max-w-4xl mx-auto">
@@ -321,7 +320,6 @@ export default function Home() {
           <p className="text-gray-500">PDF를 쉽게 분할하거나 여러 PDF를 하나로 합치세요</p>
         </div>
 
-        {/* Main tabs */}
         <div className="flex bg-white rounded-2xl shadow-sm p-1.5 mb-6 gap-1.5">
           {([ ["split","✂️ PDF 분할","indigo"], ["merge","🔗 PDF 합치기","emerald"], ["edit","✏️ 페이지 편집","violet"] ] as const).map(([key, label, color]) => (
             <button key={key} onClick={() => setTab(key)}
@@ -333,7 +331,6 @@ export default function Home() {
           ))}
         </div>
 
-        {/* ── SPLIT TAB */}
         {tab === "split" && (
           <div className="max-w-2xl mx-auto">
             <div
@@ -360,7 +357,6 @@ export default function Home() {
                 </div>
               )}
             </div>
-
             {splitFile && totalPages && (
               <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
                 <p className="font-semibold text-gray-700 mb-4">분할 방식 선택</p>
@@ -422,9 +418,7 @@ export default function Home() {
                 </button>
               </div>
             )}
-
             {splitError && <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 mb-6 text-sm">{splitError}</div>}
-
             {splitResults.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -447,7 +441,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── MERGE TAB */}
         {tab === "merge" && (
           <div className="max-w-2xl mx-auto">
             <div
@@ -465,7 +458,6 @@ export default function Home() {
               <p className="text-gray-500 text-sm">PDF 파일을 드래그하거나 클릭하여 추가</p>
               <p className="text-gray-400 text-xs mt-1">여러 파일을 한 번에 선택할 수 있습니다</p>
             </div>
-
             {mergeFiles.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm p-5 mb-6">
                 <div className="flex items-center justify-between mb-3">
@@ -516,9 +508,7 @@ export default function Home() {
                 </button>
               </div>
             )}
-
             {mergeError && <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 mb-6 text-sm">{mergeError}</div>}
-
             {mergeResult && (
               <div className="bg-white rounded-2xl shadow-sm p-6">
                 <div className="flex items-center gap-3">
@@ -538,10 +528,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── EDIT TAB */}
         {tab === "edit" && (
           <>
-            {/* Edit sub-tabs */}
             <div className="flex bg-white rounded-2xl shadow-sm p-1 mb-4 gap-1">
               {([
                 ["delete", "🗑️ 페이지 삭제", "rose"],
@@ -558,7 +546,6 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Base PDF upload (delete / extract modes) */}
             {editMode !== "insert" && (
               <div
                 className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-colors mb-4 ${editDragging ? "border-violet-500 bg-violet-50" : "border-violet-300 bg-white hover:border-violet-500"}`}
@@ -598,7 +585,6 @@ export default function Home() {
 
             {editError && <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 mb-4 text-sm">{editError}</div>}
 
-            {/* DELETE MODE */}
             {editMode === "delete" && editThumbs.length > 0 && !editLoading && (
               <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                 <div className="p-4 border-b border-gray-100 flex items-center justify-between">
@@ -638,15 +624,12 @@ export default function Home() {
                 </div>
                 {undoStack.length > 0 && (
                   <div className="px-4 pb-4">
-                    <button onClick={saveEdited} className="w-full bg-violet-600 hover:bg-violet-700 text-white py-2.5 rounded-xl font-semibold text-sm transition-colors">
-                      편집된 PDF 저장하기
-                    </button>
+                    <button onClick={saveEdited} className="w-full bg-violet-600 hover:bg-violet-700 text-white py-2.5 rounded-xl font-semibold text-sm transition-colors">편집된 PDF 저장하기</button>
                   </div>
                 )}
               </div>
             )}
 
-            {/* EXTRACT MODE */}
             {editMode === "extract" && editThumbs.length > 0 && !editLoading && (
               <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                 <div className="p-4 border-b border-gray-100 flex items-center justify-between">
@@ -686,22 +669,24 @@ export default function Home() {
             {editMode === "insert" && !editLoading && (
               <div className="grid grid-cols-2 gap-4">
 
-                {/* ── Left: 기존 PDF (drop target) */}
+                {/* Left: 기존 PDF */}
                 <div className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col">
                   <div className="p-3 border-b border-gray-100">
                     <p className="font-semibold text-sm text-gray-700">기존 PDF {editThumbs.length > 0 ? `(${editThumbs.length}페이지)` : ""}</p>
                     <p className="text-xs text-gray-400 mt-0.5">
                       {editThumbs.length > 0
-                        ? selSrcPages.size > 0 ? "오른쪽에서 선택한 페이지를 원하는 위치에 드래그하여 삽입" : "오른쪽에서 삽입할 페이지를 선택하세요"
+                        ? selSrcPages.size > 0
+                          ? "삽입할 위치에 드래그하여 놓으세요"
+                          : "오른쪽에서 삽입할 페이지를 먼저 선택하세요"
                         : "PDF를 업로드하세요"}
                     </p>
                   </div>
                   <div className="p-3 flex flex-col flex-1">
-                    {/* Upload area */}
+                    {/* Upload */}
                     <div
                       className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors mb-3 ${editDragging ? "border-violet-500 bg-violet-50" : "border-violet-200 hover:border-violet-400"}`}
-                      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setEditDragging(true); }}
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setEditDragging(true); }}
+                      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.types.includes("Files")) setEditDragging(true); }}
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.types.includes("Files")) setEditDragging(true); }}
                       onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setEditDragging(false); }}
                       onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setEditDragging(false); const f = e.dataTransfer.files?.[0]; if (f?.type === "application/pdf") loadEditFile(f); }}
                       onClick={() => document.getElementById("editBaseInput")?.click()}
@@ -718,50 +703,58 @@ export default function Home() {
                       )}
                     </div>
 
-                    {/* Thumbnail list with drop zones */}
+                    {/* Grid thumbnails with drop-zone overlays */}
                     {editThumbs.length > 0 && (
-                      <div className="overflow-y-auto flex-1" style={{ maxHeight: 460 }}>
-                        {/* Drop zone: before page 1 */}
-                        <div
-                          className={`mx-1 rounded-lg transition-all duration-150 flex items-center justify-center text-xs font-medium ${
-                            dropZoneIndex === 0
-                              ? "h-10 bg-violet-100 border-2 border-violet-400 border-dashed text-violet-500 mb-1"
-                              : "h-2 hover:h-6 hover:bg-violet-50 text-transparent hover:text-violet-400 cursor-default"
-                          }`}
-                          onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDropZoneIndex(0); }}
-                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropZoneIndex(0); }}
-                          onDragLeave={(e) => { e.stopPropagation(); setDropZoneIndex(null); }}
-                          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setDropZoneIndex(null); applyInsert(0, dragPayloadRef.current); }}
-                        >
-                          {dropZoneIndex === 0 ? "맨 앞에 삽입" : ""}
-                        </div>
-
-                        {editThumbs.map((t) => (
-                          <div key={t.pageNum}>
-                            <div className="flex items-center gap-2 px-1 py-1">
-                              <div className={`relative rounded-xl overflow-hidden border-2 shrink-0 ${
-                                dropZoneIndex !== null ? "border-gray-200 opacity-60" : "border-gray-200"
-                              }`} style={{ width: 80 }}>
-                                <img src={t.dataUrl} className="w-full block" alt={`p${t.pageNum}`} />
-                                <div className="text-center text-xs py-1 bg-gray-50 text-gray-500">{t.pageNum}</div>
+                      <div className="overflow-y-auto flex-1" style={{ maxHeight: 420 }}>
+                        <div className="flex flex-wrap gap-2 p-1">
+                          {editThumbs.map((t) => {
+                            const isDrop = dropZoneIndex === t.pageNum;
+                            return (
+                              <div
+                                key={t.pageNum}
+                                className="relative"
+                                style={{ width: 80 }}
+                                onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); if (!e.dataTransfer.types.includes("Files")) setDropZoneIndex(t.pageNum); }}
+                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!e.dataTransfer.types.includes("Files")) setDropZoneIndex(t.pageNum); }}
+                                onDragLeave={(e) => { e.stopPropagation(); setDropZoneIndex(null); }}
+                                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setDropZoneIndex(null); applyInsert(t.pageNum - 1, dragPayloadRef.current); }}
+                              >
+                                {/* Left drop indicator bar */}
+                                {isDrop && (
+                                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-violet-500 rounded-l z-10" />
+                                )}
+                                <div className={`rounded-xl overflow-hidden border-2 transition-all ${
+                                  isDrop ? "border-violet-400 ring-2 ring-violet-200 opacity-70" : "border-gray-200"
+                                }`}>
+                                  <img src={t.dataUrl} className="w-full block" alt={`p${t.pageNum}`} />
+                                  <div className="text-center text-xs py-1 bg-gray-50 text-gray-500">{t.pageNum}</div>
+                                </div>
+                                {isDrop && (
+                                  <div className="absolute inset-0 bottom-6 flex items-center justify-center pointer-events-none">
+                                    <span className="bg-violet-500 text-white text-xs px-1.5 py-0.5 rounded font-medium shadow">앞에 삽입</span>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                            {/* Drop zone: after this page */}
-                            <div
-                              className={`mx-1 rounded-lg transition-all duration-150 flex items-center justify-center text-xs font-medium ${
-                                dropZoneIndex === t.pageNum
-                                  ? "h-10 bg-violet-100 border-2 border-violet-400 border-dashed text-violet-500 mb-1"
-                                  : "h-2 hover:h-6 hover:bg-violet-50 text-transparent hover:text-violet-400 cursor-default"
-                              }`}
-                              onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDropZoneIndex(t.pageNum); }}
-                              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropZoneIndex(t.pageNum); }}
-                              onDragLeave={(e) => { e.stopPropagation(); setDropZoneIndex(null); }}
-                              onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setDropZoneIndex(null); applyInsert(t.pageNum, dragPayloadRef.current); }}
-                            >
-                              {dropZoneIndex === t.pageNum ? `${t.pageNum}페이지 뒤에 삽입` : ""}
-                            </div>
+                            );
+                          })}
+                          {/* Append-at-end drop zone */}
+                          <div
+                            className={`rounded-xl border-2 border-dashed flex items-center justify-center transition-all cursor-default ${
+                              dropZoneIndex === editThumbs.length + 1
+                                ? "border-violet-400 bg-violet-100"
+                                : "border-gray-200 hover:border-violet-300"
+                            }`}
+                            style={{ width: 80, minHeight: 80 }}
+                            onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); if (!e.dataTransfer.types.includes("Files")) setDropZoneIndex(editThumbs.length + 1); }}
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!e.dataTransfer.types.includes("Files")) setDropZoneIndex(editThumbs.length + 1); }}
+                            onDragLeave={(e) => { e.stopPropagation(); setDropZoneIndex(null); }}
+                            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setDropZoneIndex(null); applyInsert(editThumbs.length, dragPayloadRef.current); }}
+                          >
+                            <span className={`text-xs font-medium ${
+                              dropZoneIndex === editThumbs.length + 1 ? "text-violet-600" : "text-gray-300"
+                            }`}>맨 뒤</span>
                           </div>
-                        ))}
+                        </div>
 
                         {undoStack.length > 0 && (
                           <div className="pt-2 px-1 flex gap-2">
@@ -774,22 +767,21 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* ── Right: 삽입할 PDF (drag source) */}
+                {/* Right: 삽입할 PDF */}
                 <div className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col">
                   <div className="p-3 border-b border-gray-100">
                     <p className="font-semibold text-sm text-gray-700">삽입할 PDF</p>
                     <p className="text-xs text-gray-400 mt-0.5">
                       {selSrcPages.size > 0
-                        ? <span className="text-violet-600 font-medium">{selSrcPages.size}페이지 선택됨 — 왼쪽으로 드래그하여 삽입</span>
-                        : "페이지를 클릭하여 선택 후 왼쪽으로 드래그"}
+                        ? <span className="text-violet-600 font-medium">{selSrcPages.size}페이지 선택됨 — 왼쪽으로 드래그하여 놓으세요</span>
+                        : "페이지 클릭으로 선택 후 왼쪽으로 드래그"}
                     </p>
                   </div>
                   <div className="p-3 flex flex-col flex-1">
-                    {/* Upload area */}
                     <div
                       className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors mb-3 ${srcDragging ? "border-violet-500 bg-violet-50" : "border-violet-200 hover:border-violet-400"}`}
-                      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setSrcDragging(true); }}
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setSrcDragging(true); }}
+                      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.types.includes("Files")) setSrcDragging(true); }}
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.types.includes("Files")) setSrcDragging(true); }}
                       onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setSrcDragging(false); }}
                       onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setSrcDragging(false); const f = e.dataTransfer.files?.[0]; if (f?.type === "application/pdf") loadSrcFile(f); }}
                       onClick={() => document.getElementById("srcInput")?.click()}
@@ -821,15 +813,14 @@ export default function Home() {
                             const sel = selSrcPages.has(t.pageNum);
                             return (
                               <div key={t.pageNum}
-                                draggable={sel || true}
+                                draggable
                                 onDragStart={(e) => {
-                                  // If dragging an unselected page, treat it as selecting just that page
                                   const payload = sel && selSrcPages.size > 0 ? new Set(selSrcPages) : new Set([t.pageNum]);
                                   dragPayloadRef.current = payload;
                                   if (!sel) setSelSrcPages(new Set([t.pageNum]));
                                   e.dataTransfer.effectAllowed = "copy";
                                 }}
-                                onDragEnd={() => { setDropZoneIndex(null); }}
+                                onDragEnd={() => setDropZoneIndex(null)}
                                 onClick={() => setSelSrcPages(prev => { const s = new Set(prev); s.has(t.pageNum) ? s.delete(t.pageNum) : s.add(t.pageNum); return s; })}
                                 className={`relative cursor-grab active:cursor-grabbing rounded-xl overflow-hidden border-2 transition-all select-none ${
                                   sel ? "border-violet-500 ring-2 ring-violet-300" : "border-gray-200 hover:border-violet-300"
