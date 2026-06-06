@@ -12,7 +12,7 @@ type Ann = AnnText | AnnHi;
 const COMPRESS_DPI = 150;
 const COMPRESS_QUALITY = 0.7;
 type SplitMode = "count" | "size" | "range";
-type EditMode = "delete" | "extract" | "insert";
+type EditMode = "delete" | "extract" | "insert" | "reorder";
 
 interface PageRange { from: number; to: number; }
 interface SplitResult { name: string; blob: Blob; pages: string; sizeMB: number; }
@@ -291,6 +291,10 @@ export default function Home() {
 
   // ── edit
   const [editMode, setEditMode] = useState<EditMode>("delete");
+  const [reorderItems, setReorderItems] = useState<{ id: string; src: string; orig: number }[]>([]);
+  const [thumbZoom, setThumbZoom] = useState(120);
+  const [reorderDrag, setReorderDrag] = useState<number | null>(null);
+  const [reorderGap, setReorderGap] = useState<number | null>(null);
   const [editFile, setEditFile] = useState<File | null>(null);
   const [editThumbs, setEditThumbs] = useState<PageThumb[]>([]);
   const [editLoading, setEditLoading] = useState(false);
@@ -568,7 +572,40 @@ export default function Home() {
     setSelPages(new Set()); setEditFile(null); setEditThumbs([]);
     editBytesRef.current = null; setUndoStack([]); setEditError("");
     setSrcFile(null); setSrcThumbs([]); setSelSrcPages(new Set());
-    setDropZoneIndex(null);
+    setDropZoneIndex(null); setReorderItems([]); setReorderDrag(null); setReorderGap(null);
+  };
+
+  useEffect(() => {
+    if (editMode !== "reorder") return;
+    setReorderItems(editThumbs.map(t => ({ id: uid(), src: t.dataUrl, orig: t.pageNum - 1 })));
+    setReorderDrag(null); setReorderGap(null);
+  }, [editThumbs, editMode]);
+
+  const moveReorder = (from: number, gap: number) => {
+    setReorderItems(prev => {
+      if (from < 0 || from >= prev.length) return prev;
+      const arr = [...prev];
+      const [it] = arr.splice(from, 1);
+      arr.splice(from < gap ? gap - 1 : gap, 0, it);
+      return arr;
+    });
+  };
+  const resetReorder = () => setReorderItems(prev => [...prev].sort((a, b) => a.orig - b.orig));
+  const saveReordered = async () => {
+    if (!editBytesRef.current || !editFile) return;
+    setEditLoading(true); setEditError("");
+    try {
+      const src = await PDFDocument.load(editBytesRef.current);
+      const doc = await PDFDocument.create();
+      const pp = await doc.copyPages(src, reorderItems.map(it => it.orig));
+      pp.forEach(p => doc.addPage(p));
+      const bytes = new Uint8Array(await doc.save());
+      const ab = new ArrayBuffer(bytes.byteLength); new Uint8Array(ab).set(bytes);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([ab], { type: "application/pdf" }));
+      a.download = `${editFile.name.replace(/\.pdf$/i, "")}_순서변경.pdf`; a.click();
+    } catch (e) { setEditError("순서 변경 저장 중 오류: " + (e as Error).message); }
+    finally { setEditLoading(false); }
   };
 
   // ── SPLIT
@@ -810,8 +847,8 @@ export default function Home() {
         {tab==="edit" && (
           <>
             <div className="flex bg-white rounded-2xl shadow-sm p-1 mb-4 gap-1">
-              {([  ["delete","🗑️ 페이지 삭제","rose"],["extract","📤 페이지 추출","blue"],["insert","➕ 페이지 삽입","violet"] ] as const).map(([key,label,color])=>(
-                <button key={key} onClick={()=>{setEditMode(key);resetEditState();}} className={`flex-1 py-2 rounded-xl font-semibold text-sm transition-colors ${editMode===key?color==="rose"?"bg-rose-600 text-white":color==="blue"?"bg-blue-600 text-white":"bg-violet-600 text-white":color==="rose"?"text-gray-500 hover:text-rose-600":color==="blue"?"text-gray-500 hover:text-blue-600":"text-gray-500 hover:text-violet-600"}`}>{label}</button>
+              {([  ["delete","🗑️ 삭제","rose"],["extract","📤 추출","blue"],["insert","➕ 삽입","violet"],["reorder","🔀 순서 변경","amber"] ] as const).map(([key,label,color])=>(
+                <button key={key} onClick={()=>{setEditMode(key);resetEditState();}} className={`flex-1 py-2 rounded-xl font-semibold text-sm transition-colors ${editMode===key?(color==="rose"?"bg-rose-600 text-white":color==="blue"?"bg-blue-600 text-white":color==="amber"?"bg-amber-500 text-white":"bg-violet-600 text-white"):(color==="rose"?"text-gray-500 hover:text-rose-600":color==="blue"?"text-gray-500 hover:text-blue-600":color==="amber"?"text-gray-500 hover:text-amber-600":"text-gray-500 hover:text-violet-600")}`}>{label}</button>
               ))}
             </div>
 
@@ -843,6 +880,49 @@ export default function Home() {
                 <div className="p-4 border-b border-gray-100 flex items-center justify-between"><p className="text-sm font-semibold text-gray-700">{selPages.size>0?<span className="text-blue-600">{selPages.size}페이지 선택됨</span>:"추출할 페이지를 클릭하여 선택"}</p>{selPages.size>0&&<button onClick={()=>setSelPages(new Set())} className="text-xs text-gray-400 hover:text-gray-600">선택 해제</button>}</div>
                 <div className="flex flex-wrap gap-3 p-4 max-h-[480px] overflow-y-auto">{editThumbs.map(t=>{const sel=selPages.has(t.pageNum);return(<div key={t.pageNum} onClick={()=>toggleSel(t.pageNum)} className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all select-none ${sel?"border-blue-500 ring-2 ring-blue-200":"border-gray-200 hover:border-gray-400"}`} style={{width:96}}><img src={t.dataUrl} className="w-full block" alt={`페이지 ${t.pageNum}`}/><div className={`text-center text-xs py-1 ${sel?"bg-blue-50 text-blue-600 font-semibold":"bg-gray-50 text-gray-500"}`}>{t.pageNum}</div>{sel&&(<div className="absolute top-1.5 right-1.5 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center"><span className="text-white text-xs font-bold">✓</span></div>)}</div>);})}</div>
                 <div className="p-4 border-t border-gray-100"><button onClick={applyExtract} disabled={!selPages.size} className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white py-3 rounded-xl font-semibold text-sm transition-colors">{selPages.size?`선택한 ${selPages.size}페이지 추출하여 저장`:"추출할 페이지를 선택하세요"}</button></div>
+              </div>
+            )}
+
+            {editMode==="reorder"&&editThumbs.length>0&&!editLoading&&(
+              <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-sm font-semibold text-gray-700">페이지를 드래그해 원하는 위치에 놓으세요 <span className="text-gray-400 font-normal">({reorderItems.length}페이지)</span></p>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-gray-400">🔍 축소</span>
+                      <input type="range" min={70} max={260} value={thumbZoom} onChange={e=>setThumbZoom(Number(e.target.value))} className="w-28 accent-amber-500"/>
+                      <span className="text-xs text-gray-400">확대</span>
+                    </div>
+                    <button onClick={resetReorder} className="text-xs text-gray-400 hover:text-gray-600">원래 순서</button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-start gap-y-4 p-4 max-h-[560px] overflow-y-auto">
+                  {reorderItems.map((it,i)=>(
+                    <div key={it.id} className="flex items-stretch">
+                      <div className="self-stretch flex items-center justify-center" style={{width:reorderGap===i?14:6,transition:"width .1s"}}>
+                        {reorderGap===i&&<div className="rounded-full" style={{width:3,minHeight:60,height:"100%",background:"#f59e0b",boxShadow:"0 0 8px 2px rgba(245,158,11,0.5)"}}/>}
+                      </div>
+                      <div draggable
+                        onDragStart={()=>setReorderDrag(i)}
+                        onDragOver={e=>{e.preventDefault();const r=e.currentTarget.getBoundingClientRect();setReorderGap(e.clientX<r.left+r.width/2?i:i+1);}}
+                        onDrop={e=>{e.preventDefault();if(reorderDrag!==null&&reorderGap!==null)moveReorder(reorderDrag,reorderGap);setReorderDrag(null);setReorderGap(null);}}
+                        onDragEnd={()=>{setReorderDrag(null);setReorderGap(null);}}
+                        className={`relative rounded-xl overflow-hidden border-2 cursor-grab active:cursor-grabbing transition-all select-none ${reorderDrag===i?"border-amber-500 opacity-40":"border-gray-200 hover:border-amber-400"}`}
+                        style={{width:thumbZoom}}>
+                        <img src={it.src} draggable={false} className="w-full block" alt={`페이지 ${i+1}`}/>
+                        <div className="text-center text-xs py-1 bg-gray-50 text-gray-600 font-medium">{i+1}</div>
+                      </div>
+                      {i===reorderItems.length-1&&(
+                        <div className="self-stretch flex items-center justify-center" style={{width:reorderGap===i+1?14:6,transition:"width .1s"}}>
+                          {reorderGap===i+1&&<div className="rounded-full" style={{width:3,minHeight:60,height:"100%",background:"#f59e0b",boxShadow:"0 0 8px 2px rgba(245,158,11,0.5)"}}/>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="p-4 border-t border-gray-100">
+                  <button onClick={saveReordered} className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl font-semibold text-sm transition-colors">변경된 순서로 PDF 저장</button>
+                </div>
               </div>
             )}
 
