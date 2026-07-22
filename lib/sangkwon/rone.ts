@@ -74,9 +74,11 @@ export async function rawTblData(statblId: string, dtacycle?: string, wrttime?: 
 
 async function fetchJson(url: string): Promise<unknown | null> {
   try {
+    // no-store: R-ONE 응답을 Vercel Data Cache에 남기지 않음(과거 빈 응답 캐싱 방지).
+    // 반복 호출은 모듈 레벨 캐시(tableListCache/rentCache)로 억제.
     const res = await fetch(url, {
       headers: { Accept: "application/json" },
-      next: { revalidate: 86400 },
+      cache: "no-store",
     });
     if (!res.ok) return null;
     const text = await res.text();
@@ -134,85 +136,74 @@ function pickTable(list: TblRow[], must: string[], exclude: string[]): TblRow | 
 }
 
 // ── 통계 데이터 ──
+// 실제 응답 예: CLS_NM="광화문", CLS_FULLNM="서울>도심>광화문",
+//   ITM_NM="임대료", DTA_VAL=91.36, UI_NM="천원/㎡", WRTTIME_IDTFR_ID="202503"
 interface DataRow {
   WRTTIME_IDTFR_ID?: string;
   WRTTIME_DESC?: string;
   CLS_NM?: string;
+  CLS_FULLNM?: string;
   ITM_NM?: string;
   DTA_VAL?: string | number;
   UI_NM?: string;
 }
 
-async function loadTableData(
-  statblId: string,
-  dtacycle?: string,
-  wrttime?: string
-): Promise<DataRow[]> {
+/** 통계표 전체 시계열(전 지역·전 분기) 조회 — 시점 미지정 시 모든 분기 반환 */
+async function loadTableData(statblId: string, dtacycle?: string): Promise<DataRow[]> {
   const key = process.env.R_ONE_KEY;
   if (!key) return [];
   let url = `${BASE}/SttsApiTblData.do?KEY=${encodeURIComponent(key)}&Type=json&STATBL_ID=${encodeURIComponent(
     statblId
-  )}&pIndex=1&pSize=2000`;
+  )}&pIndex=1&pSize=4000`;
   if (dtacycle) url += `&DTACYCLE_CD=${encodeURIComponent(dtacycle)}`;
-  if (wrttime) url += `&WRTTIME_IDTFR_ID=${encodeURIComponent(wrttime)}`;
   const json = await fetchJson(url);
   return rowsOf<DataRow>(json, "SttsApiTblData");
 }
 
-/** 분기 시점코드 후보를 최신→과거로 생성 (형식 미확정 → 여러 형식 병행) */
-function quarterCandidates(): string[] {
-  const out: string[] = [];
-  for (let y = 2026; y >= 2024; y--) {
-    for (let q = 4; q >= 1; q--) {
-      out.push(`${y}${q}`); // 20243
-      out.push(`${y}0${q}`); // 202403
-    }
-  }
-  return out;
-}
-
-/** 데이터가 나올 때까지 분기 시점코드를 탐색해 rows 반환 */
-async function loadLatestQuarter(
-  statblId: string,
-  dtacycle?: string
-): Promise<{ rows: DataRow[]; wrttime: string } | null> {
-  // 1) 시점 미지정으로 전체 시도 (되면 최상)
-  const all = await loadTableData(statblId, dtacycle);
-  if (all.length) return { rows: all, wrttime: "" };
-  // 2) 분기 시점코드 후보 탐색
-  for (const w of quarterCandidates()) {
-    const rows = await loadTableData(statblId, dtacycle, w);
-    if (rows.length) return { rows, wrttime: w };
-  }
-  return null;
-}
-
-/** 서울(시도 집계) 최신 분기 값 추출 */
-function seoulLatest(rows: DataRow[]): { value: number; quarter: string; unit?: string; region: string } | null {
-  const seoul = rows.filter((r) => typeof r.CLS_NM === "string" && r.CLS_NM.includes("서울"));
+/** 서울 최신 분기 값 추출 (지역은 CLS_FULLNM 기준: "서울" 또는 "서울>...") */
+function seoulLatest(
+  rows: DataRow[]
+): { value: number; quarter: string; unit?: string; region: string } | null {
+  const region = (r: DataRow) => (typeof r.CLS_FULLNM === "string" ? r.CLS_FULLNM : r.CLS_NM ?? "");
+  const seoul = rows.filter((r) => region(r).startsWith("서울"));
   if (!seoul.length) return null;
-  // 시도 집계 우선 = CLS_NM 이 가장 짧은(하위 상권명이 붙지 않은) 행
-  const minLen = Math.min(...seoul.map((r) => (r.CLS_NM as string).length));
-  const agg = seoul.filter((r) => (r.CLS_NM as string).length === minLen);
-  const pool = agg.length ? agg : seoul;
-  // 최신 분기
-  const latest = pool.reduce((a, b) =>
-    String(b.WRTTIME_IDTFR_ID ?? "") > String(a.WRTTIME_IDTFR_ID ?? "") ? b : a
+
+  // 최신 분기 코드
+  const latestQ = seoul.reduce(
+    (m, r) => (String(r.WRTTIME_IDTFR_ID ?? "") > m ? String(r.WRTTIME_IDTFR_ID ?? "") : m),
+    ""
   );
-  const v = Number(latest.DTA_VAL);
-  if (!isFinite(v)) return null;
+  const atLatest = seoul.filter((r) => String(r.WRTTIME_IDTFR_ID ?? "") === latestQ);
+  if (!atLatest.length) return null;
+
+  // 서울 시도 집계 행("서울") 우선, 없으면 서울 소재 상권 평균
+  const agg = atLatest.find((r) => region(r) === "서울" || r.CLS_NM === "서울" || r.CLS_NM === "서울특별시");
+  let value: number;
+  let label: string;
+  if (agg) {
+    value = Number(agg.DTA_VAL);
+    label = "서울";
+  } else {
+    const vals = atLatest.map((r) => Number(r.DTA_VAL)).filter((v) => isFinite(v));
+    if (!vals.length) return null;
+    value = vals.reduce((a, b) => a + b, 0) / vals.length;
+    label = "서울 주요상권 평균";
+  }
+  if (!isFinite(value)) return null;
   return {
-    value: v,
-    quarter: latest.WRTTIME_DESC || String(latest.WRTTIME_IDTFR_ID ?? ""),
-    unit: latest.UI_NM,
-    region: latest.CLS_NM as string,
+    value,
+    quarter: atLatest[0].WRTTIME_DESC || latestQ,
+    unit: atLatest[0].UI_NM,
+    region: label,
   };
 }
 
 export interface RentVacancy {
-  /** 서울 중대형상가 임대료 (원/㎡) */
+  /** 서울 중대형상가 임대료 (R-ONE 원자료 값, 보통 천원/㎡) */
   rent: number | null;
   rentUnit?: string;
+  /** 임대료를 원/㎡로 환산한 값 (점수 계산용) */
+  rentWonPerM2: number | null;
   /** 서울 중대형상가 공실률 (%) */
   vacancy: number | null;
   quarter: string;
@@ -232,19 +223,23 @@ export async function getRentVacancy(): Promise<RentVacancy | null> {
   const vacTbl = pickTable(list, ["공실률", "중대형"], []);
   if (!rentTbl && !vacTbl) return null;
 
-  const [rentRes, vacRes] = await Promise.all([
-    rentTbl ? loadLatestQuarter(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD) : Promise.resolve(null),
-    vacTbl ? loadLatestQuarter(vacTbl.STATBL_ID, vacTbl.DTACYCLE_CD) : Promise.resolve(null),
+  const [rentRows, vacRows] = await Promise.all([
+    rentTbl ? loadTableData(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD) : Promise.resolve([]),
+    vacTbl ? loadTableData(vacTbl.STATBL_ID, vacTbl.DTACYCLE_CD) : Promise.resolve([]),
   ]);
 
-  const rent = rentRes ? seoulLatest(rentRes.rows) : null;
-  const vac = vacRes ? seoulLatest(vacRes.rows) : null;
+  const rent = seoulLatest(rentRows);
+  const vac = seoulLatest(vacRows);
   if (!rent && !vac) return null;
 
+  // 임대료 단위가 "천원/㎡"이면 원/㎡로 환산
+  const toWon = (v: number, unit?: string) => (unit && unit.includes("천원") ? v * 1000 : v);
+
   const result: RentVacancy = {
-    rent: rent ? rent.value : null,
+    rent: rent ? Math.round(rent.value * 10) / 10 : null,
     rentUnit: rent?.unit,
-    vacancy: vac ? vac.value : null,
+    rentWonPerM2: rent ? Math.round(toWon(rent.value, rent.unit)) : null,
+    vacancy: vac ? Math.round(vac.value * 10) / 10 : null,
     quarter: (rent?.quarter || vac?.quarter) ?? "",
     region: (rent?.region || vac?.region) ?? "서울",
   };
@@ -252,32 +247,16 @@ export async function getRentVacancy(): Promise<RentVacancy | null> {
   return result;
 }
 
-// ── 진단용: 탐색된 통계표와 원자료 샘플을 함께 반환 ──
+// ── 진단용: 탐색된 통계표와 파싱 결과 반환 ──
 export async function debugRent() {
+  const r = await getRentVacancy();
   const list = await loadTableList();
   const rentTbl = pickTable(list, ["임대료", "중대형"], ["층별", "지수"]);
   const vacTbl = pickTable(list, ["공실률", "중대형"], []);
-  const [rentRes, vacRes] = await Promise.all([
-    rentTbl ? loadLatestQuarter(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD) : Promise.resolve(null),
-    vacTbl ? loadLatestQuarter(vacTbl.STATBL_ID, vacTbl.DTACYCLE_CD) : Promise.resolve(null),
-  ]);
-  const rentRows = rentRes?.rows ?? [];
-  const vacRows = vacRes?.rows ?? [];
   return {
     tableCount: list.length,
-    rentTbl: rentTbl ? { id: rentTbl.STATBL_ID, nm: rentTbl.STATBL_NM, cyc: rentTbl.DTACYCLE_CD } : null,
-    vacTbl: vacTbl ? { id: vacTbl.STATBL_ID, nm: vacTbl.STATBL_NM, cyc: vacTbl.DTACYCLE_CD } : null,
-    rentWrttime: rentRes?.wrttime ?? null,
-    vacWrttime: vacRes?.wrttime ?? null,
-    rentRowCount: rentRows.length,
-    vacRowCount: vacRows.length,
-    rentSampleRows: rentRows.slice(0, 3),
-    vacSampleRows: vacRows.slice(0, 3),
-    seoulRows: rentRows.filter((r) => typeof r.CLS_NM === "string" && r.CLS_NM.includes("서울")).slice(0, 8),
-    parsedRent: seoulLatest(rentRows),
-    parsedVac: seoulLatest(vacRows),
-    raw_noTime: rentTbl ? await rawTblData(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD) : null,
-    raw_202403: rentTbl ? await rawTblData(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD, "202403") : null,
-    raw_202503: rentTbl ? await rawTblData(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD, "202503") : null,
+    rentTbl: rentTbl ? { id: rentTbl.STATBL_ID, nm: rentTbl.STATBL_NM } : null,
+    vacTbl: vacTbl ? { id: vacTbl.STATBL_ID, nm: vacTbl.STATBL_NM } : null,
+    parsed: r,
   };
 }

@@ -192,15 +192,12 @@ export async function analyzeLocation(
   // 7. 임대료·권리금 (R-ONE 상업용부동산 임대동향 — 서울 중대형상가, 역방향: 낮을수록 좋음)
   if (rent && (rent.rent != null || rent.vacancy != null)) {
     const parts: string[] = [];
-    if (rent.rent != null) {
-      parts.push(`임대료 ${rent.rent.toLocaleString()}${rent.rentUnit || "원/㎡"}`);
-    }
+    if (rent.rent != null) parts.push(`임대료 ${rent.rent.toLocaleString()}${rent.rentUnit || "원/㎡"}`);
     if (rent.vacancy != null) parts.push(`공실률 ${rent.vacancy}%`);
     // 임대료(원/㎡)가 낮을수록 유리 → 역방향 점수. 서울 중대형상가 대략 3만~10만원/㎡ 밴드.
     let score = 55;
-    if (rent.rent != null) {
-      const r = rent.rent;
-      score = 90 - ((r - 30000) / 70000) * 60; // 3만→90, 10만→30
+    if (rent.rentWonPerM2 != null) {
+      score = 90 - ((rent.rentWonPerM2 - 30000) / 70000) * 60; // 3만→90, 10만→30
     }
     // 공실률이 높으면 상권 활력 측면 감점(소폭)
     if (rent.vacancy != null) score -= Math.min(15, rent.vacancy * 0.8);
