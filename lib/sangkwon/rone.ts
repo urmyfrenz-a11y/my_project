@@ -148,16 +148,39 @@ interface DataRow {
   UI_NM?: string;
 }
 
-/** 통계표 전체 시계열(전 지역·전 분기) 조회 — 시점 미지정 시 모든 분기 반환 */
-async function loadTableData(statblId: string, dtacycle?: string): Promise<DataRow[]> {
+/** 통계 데이터 조회 — 주의: R-ONE은 pSize>1000이면 빈 응답을 주므로 1000 이하 필수 */
+async function loadTableData(
+  statblId: string,
+  dtacycle?: string,
+  wrttime?: string
+): Promise<DataRow[]> {
   const key = process.env.R_ONE_KEY;
   if (!key) return [];
   let url = `${BASE}/SttsApiTblData.do?KEY=${encodeURIComponent(key)}&Type=json&STATBL_ID=${encodeURIComponent(
     statblId
-  )}&pIndex=1&pSize=4000`;
+  )}&pIndex=1&pSize=500`;
   if (dtacycle) url += `&DTACYCLE_CD=${encodeURIComponent(dtacycle)}`;
+  if (wrttime) url += `&WRTTIME_IDTFR_ID=${encodeURIComponent(wrttime)}`;
   const json = await fetchJson(url);
   return rowsOf<DataRow>(json, "SttsApiTblData");
+}
+
+/** 분기 시점코드(YYYYQQ) 최신→과거 후보 */
+function quarterCandidatesDesc(): string[] {
+  const out: string[] = [];
+  for (let y = 2026; y >= 2024; y--) {
+    for (let q = 4; q >= 1; q--) out.push(`${y}0${q}`); // 202503 = 2025년 3분기
+  }
+  return out;
+}
+
+/** 최신 분기 한 페이지(약 305건, 전 지역)를 시점코드로 직접 조회 */
+async function loadLatestQuarterRows(statblId: string, dtacycle?: string): Promise<DataRow[]> {
+  for (const w of quarterCandidatesDesc()) {
+    const rows = await loadTableData(statblId, dtacycle, w);
+    if (rows.length) return rows;
+  }
+  return [];
 }
 
 /** 서울 최신 분기 값 추출 (지역은 CLS_FULLNM 기준: "서울" 또는 "서울>...") */
@@ -217,11 +240,11 @@ const RENT_STATBL_ID = "T244363134858603"; // 임대동향 지역별 임대료_�
 const VAC_STATBL_ID = "T249633134845544"; // 임대동향 지역별 공실률_중대형 상가
 const DTACYCLE = "QY";
 
-/** ID로 직접 조회, 비면 목록 탐색으로 폴백 */
+/** ID로 최신 분기 조회, 비면 목록 탐색으로 폴백 */
 async function fetchRentVacRows(): Promise<{ rentRows: DataRow[]; vacRows: DataRow[] }> {
   let [rentRows, vacRows] = await Promise.all([
-    loadTableData(RENT_STATBL_ID, DTACYCLE),
-    loadTableData(VAC_STATBL_ID, DTACYCLE),
+    loadLatestQuarterRows(RENT_STATBL_ID, DTACYCLE),
+    loadLatestQuarterRows(VAC_STATBL_ID, DTACYCLE),
   ]);
   // 폴백: ID가 바뀌어 비면 통계표 목록에서 이름으로 재탐색
   if (!rentRows.length || !vacRows.length) {
@@ -229,11 +252,11 @@ async function fetchRentVacRows(): Promise<{ rentRows: DataRow[]; vacRows: DataR
     if (list.length) {
       if (!rentRows.length) {
         const t = pickTable(list, ["임대료", "중대형"], ["층별", "지수"]);
-        if (t) rentRows = await loadTableData(t.STATBL_ID, t.DTACYCLE_CD);
+        if (t) rentRows = await loadLatestQuarterRows(t.STATBL_ID, t.DTACYCLE_CD);
       }
       if (!vacRows.length) {
         const t = pickTable(list, ["공실률", "중대형"], []);
-        if (t) vacRows = await loadTableData(t.STATBL_ID, t.DTACYCLE_CD);
+        if (t) vacRows = await loadLatestQuarterRows(t.STATBL_ID, t.DTACYCLE_CD);
       }
     }
   }
