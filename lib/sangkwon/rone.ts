@@ -43,35 +43,6 @@ function headOf(json: unknown, svc: string): Head | null {
   return null;
 }
 
-/** 진단용: 원본 응답을 그대로 반환 */
-export async function rawTblData(statblId: string, dtacycle?: string, wrttime?: string) {
-  const key = process.env.R_ONE_KEY;
-  if (!key) return { error: "no key" };
-  let url = `${BASE}/SttsApiTblData.do?KEY=${encodeURIComponent(key)}&Type=json&STATBL_ID=${encodeURIComponent(
-    statblId
-  )}&pIndex=1&pSize=100`;
-  if (dtacycle) url += `&DTACYCLE_CD=${encodeURIComponent(dtacycle)}`;
-  if (wrttime) url += `&WRTTIME_IDTFR_ID=${encodeURIComponent(wrttime)}`;
-  try {
-    const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
-    const text = await res.text();
-    let rootKeys: string[] = [];
-    try {
-      rootKeys = Object.keys(JSON.parse(text));
-    } catch {
-      /* not json */
-    }
-    return {
-      status: res.status,
-      urlShown: url.replace(encodeURIComponent(key), "***"),
-      rootKeys,
-      textHead: text.slice(0, 1500),
-    };
-  } catch (e) {
-    return { error: String(e) };
-  }
-}
-
 async function fetchJson(url: string): Promise<unknown | null> {
   try {
     // no-store: R-ONE 응답을 Vercel Data Cache에 남기지 않음(과거 빈 응답 캐싱 방지).
@@ -286,18 +257,4 @@ export async function getRentVacancy(): Promise<RentVacancy | null> {
   };
   rentCache = result;
   return result;
-}
-
-// ── 진단용: 탐색된 통계표와 파싱 결과 반환 ──
-export async function debugRent() {
-  const r = await getRentVacancy();
-  const list = await loadTableList();
-  const rentTbl = pickTable(list, ["임대료", "중대형"], ["층별", "지수"]);
-  const vacTbl = pickTable(list, ["공실률", "중대형"], []);
-  return {
-    tableCount: list.length,
-    rentTbl: rentTbl ? { id: rentTbl.STATBL_ID, nm: rentTbl.STATBL_NM } : null,
-    vacTbl: vacTbl ? { id: vacTbl.STATBL_ID, nm: vacTbl.STATBL_NM } : null,
-    parsed: r,
-  };
 }

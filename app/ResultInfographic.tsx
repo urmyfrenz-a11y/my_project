@@ -12,11 +12,11 @@ export function InsightList({
 }) {
   if (!insights.length) return null;
   return (
-    <div className="rounded-xl bg-indigo-50/60 border border-indigo-100 p-4">
-      <p className="text-xs font-bold text-indigo-700 mb-2">💡 {title}</p>
+    <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+      <p className="mb-2 text-xs font-bold text-indigo-700">💡 {title}</p>
       <ul className="space-y-1.5">
         {insights.map((it, i) => (
-          <li key={i} className="flex gap-2 text-xs text-gray-700 leading-relaxed">
+          <li key={i} className="flex gap-2 text-xs leading-relaxed text-slate-700">
             <span className="shrink-0">{it.icon}</span>
             <span>{it.text}</span>
           </li>
@@ -53,8 +53,7 @@ function RadarChart({ factors }: { factors: FactorScore[] }) {
     dataPoints.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ") + " Z";
 
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[280px] mx-auto">
-      {/* 배경 그리드 */}
+    <svg viewBox={`0 0 ${size} ${size}`} className="mx-auto w-full max-w-[280px]">
       {rings.map((rr, ri) => (
         <polygon
           key={ri}
@@ -65,21 +64,18 @@ function RadarChart({ factors }: { factors: FactorScore[] }) {
             })
             .join(" ")}
           fill="none"
-          stroke="#e5e7eb"
+          stroke="#e2e8f0"
           strokeWidth={1}
         />
       ))}
-      {/* 축선 */}
       {factors.map((_, i) => {
         const p = point(i, R);
-        return <line key={i} x1={cx} y1={cy} x2={p[0]} y2={p[1]} stroke="#e5e7eb" strokeWidth={1} />;
+        return <line key={i} x1={cx} y1={cy} x2={p[0]} y2={p[1]} stroke="#e2e8f0" strokeWidth={1} />;
       })}
-      {/* 데이터 영역 */}
-      <path d={dataPath} fill="rgba(37,99,235,0.18)" stroke="#2563eb" strokeWidth={2} />
+      <path d={dataPath} fill="rgba(79,70,229,0.16)" stroke="#4f46e5" strokeWidth={2} />
       {dataPoints.map((p, i) => (
-        <circle key={i} cx={p[0]} cy={p[1]} r={2.5} fill="#2563eb" />
+        <circle key={i} cx={p[0]} cy={p[1]} r={2.5} fill="#4f46e5" />
       ))}
-      {/* 축 레이블 */}
       {factors.map((f, i) => {
         const p = point(i, R + 18);
         return (
@@ -88,7 +84,7 @@ function RadarChart({ factors }: { factors: FactorScore[] }) {
             x={p[0]}
             y={p[1]}
             fontSize={9}
-            fill="#6b7280"
+            fill="#64748b"
             textAnchor="middle"
             dominantBaseline="middle"
           >
@@ -107,8 +103,8 @@ function ScoreGauge({ score, grade }: { score: number; grade: string }) {
   const offset = c * (1 - score / 100);
   return (
     <div className="relative flex items-center justify-center">
-      <svg viewBox="0 0 140 140" className="w-40 h-40 -rotate-90">
-        <circle cx="70" cy="70" r={r} fill="none" stroke="#eef0f3" strokeWidth={12} />
+      <svg viewBox="0 0 140 140" className="h-40 w-40 -rotate-90">
+        <circle cx="70" cy="70" r={r} fill="none" stroke="#eef2f7" strokeWidth={12} />
         <circle
           cx="70"
           cy="70"
@@ -122,10 +118,10 @@ function ScoreGauge({ score, grade }: { score: number; grade: string }) {
         />
       </svg>
       <div className="absolute flex flex-col items-center">
-        <span className="text-4xl font-bold" style={{ color }}>
+        <span className="text-4xl font-extrabold" style={{ color }}>
           {score}
         </span>
-        <span className="text-xs text-gray-400">/ 100</span>
+        <span className="text-xs text-slate-400">/ 100</span>
       </div>
     </div>
   );
@@ -133,30 +129,41 @@ function ScoreGauge({ score, grade }: { score: number; grade: string }) {
 
 export default function ResultInfographic({ result }: { result: AnalysisResult }) {
   const color = GRADE_COLOR[result.grade] ?? "#2563eb";
+  const liveCount = result.factors.filter((f) => f.source === "live").length;
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       {/* 헤더 */}
-      <div className="px-6 py-5 border-b border-gray-100">
+      <div className="relative border-b border-slate-100 px-6 py-5">
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 h-1"
+          style={{ background: `linear-gradient(90deg, ${color}, transparent)` }}
+        />
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-xs font-medium text-gray-400">상권 분석 결과</p>
-            <h2 className="text-lg font-bold text-gray-900 truncate">{result.areaName}</h2>
-            <p className="text-xs text-gray-400 truncate">{result.address}</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">상권 분석 결과</p>
+            <h2 className="truncate text-xl font-extrabold text-slate-900">{result.areaName}</h2>
+            <p className="truncate text-xs text-slate-400">{result.address}</p>
           </div>
-          <span
-            className="shrink-0 inline-flex items-center justify-center w-12 h-12 rounded-xl text-2xl font-black text-white"
-            style={{ backgroundColor: color }}
-          >
-            {result.grade}
-          </span>
+          <div className="flex shrink-0 flex-col items-center">
+            <span
+              className="flex h-12 w-12 items-center justify-center rounded-2xl text-2xl font-black text-white shadow-sm"
+              style={{ backgroundColor: color }}
+            >
+              {result.grade}
+            </span>
+            <span className="mt-1 text-[10px] font-semibold text-slate-400">등급</span>
+          </div>
         </div>
       </div>
 
       {/* 점수 + 레이더 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-6 py-6 items-center">
+      <div className="grid grid-cols-1 items-center gap-4 px-6 py-6 sm:grid-cols-2">
         <div className="flex flex-col items-center gap-2">
           <ScoreGauge score={result.totalScore} grade={result.grade} />
-          <p className="text-sm text-gray-500">종합 상권 점수</p>
+          <p className="text-sm font-medium text-slate-500">종합 상권 점수</p>
+          <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-600">
+            실데이터 {liveCount}/9 반영
+          </span>
         </div>
         <RadarChart factors={result.factors} />
       </div>
@@ -167,39 +174,37 @@ export default function ResultInfographic({ result }: { result: AnalysisResult }
       </div>
 
       {/* 팩터별 상세 */}
-      <div className="px-6 pb-6 space-y-3">
+      <div className="space-y-3.5 px-6 py-6">
         {result.factors.map((f) => (
           <div key={f.key}>
             <div className="flex items-center justify-between text-sm">
-              <span className="font-medium text-gray-700">
+              <span className="font-semibold text-slate-700">
                 {f.label}
-                {f.source === "live" && (
-                  <span className="ml-1.5 align-middle text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600">
-                    실데이터
-                  </span>
+                {f.source === "live" ? (
+                  <span className="ml-1.5 align-middle text-[10px] font-semibold text-emerald-600">● 실데이터</span>
+                ) : (
+                  <span className="ml-1.5 align-middle text-[10px] text-slate-300">○ 데모</span>
                 )}
               </span>
-              <span className="tabular-nums font-semibold text-gray-800">{f.score}</span>
+              <span className="font-bold tabular-nums text-slate-800">{f.score}</span>
             </div>
-            <div className="mt-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
               <div
-                className="h-full rounded-full"
+                className="h-full rounded-full transition-all"
                 style={{ width: `${f.score}%`, backgroundColor: color }}
               />
             </div>
-            <p className="mt-1 text-xs text-gray-400">{f.detail}</p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-400">{f.detail}</p>
           </div>
         ))}
       </div>
 
       {/* 푸터 */}
-      <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
-        <span className="text-[11px] text-gray-400">
-          {result.demo
-            ? "※ 데모 데이터 기반 — API 키 연결 시 실데이터로 전환"
-            : "일부 팩터 실데이터 반영됨"}
+      <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-6 py-3">
+        <span className="text-[11px] text-slate-400">
+          {result.demo ? "※ 데모 데이터 기반 — API 키 연결 시 실데이터로 전환" : "공공데이터 실시간 반영"}
         </span>
-        <span className="text-[11px] text-gray-300">
+        <span className="text-[11px] text-slate-300">
           {result.generatedAt ? new Date(result.generatedAt).toLocaleString("ko-KR") : ""}
         </span>
       </div>
