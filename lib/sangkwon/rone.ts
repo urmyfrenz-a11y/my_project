@@ -212,22 +212,40 @@ export interface RentVacancy {
 
 let rentCache: RentVacancy | null = null;
 
+// 원본 응답으로 확인한 최신 시리즈(2024년3분기~) 통계표 ID (STAT_ID S237220284)
+const RENT_STATBL_ID = "T244363134858603"; // 임대동향 지역별 임대료_중대형 상가
+const VAC_STATBL_ID = "T249633134845544"; // 임대동향 지역별 공실률_중대형 상가
+const DTACYCLE = "QY";
+
+/** ID로 직접 조회, 비면 목록 탐색으로 폴백 */
+async function fetchRentVacRows(): Promise<{ rentRows: DataRow[]; vacRows: DataRow[] }> {
+  let [rentRows, vacRows] = await Promise.all([
+    loadTableData(RENT_STATBL_ID, DTACYCLE),
+    loadTableData(VAC_STATBL_ID, DTACYCLE),
+  ]);
+  // 폴백: ID가 바뀌어 비면 통계표 목록에서 이름으로 재탐색
+  if (!rentRows.length || !vacRows.length) {
+    const list = await loadTableList();
+    if (list.length) {
+      if (!rentRows.length) {
+        const t = pickTable(list, ["임대료", "중대형"], ["층별", "지수"]);
+        if (t) rentRows = await loadTableData(t.STATBL_ID, t.DTACYCLE_CD);
+      }
+      if (!vacRows.length) {
+        const t = pickTable(list, ["공실률", "중대형"], []);
+        if (t) vacRows = await loadTableData(t.STATBL_ID, t.DTACYCLE_CD);
+      }
+    }
+  }
+  return { rentRows, vacRows };
+}
+
 /** 서울 중대형상가 임대료·공실률 (최신 분기, R-ONE 실데이터) */
 export async function getRentVacancy(): Promise<RentVacancy | null> {
   if (!roneConfigured()) return null;
   if (rentCache) return rentCache;
-  const list = await loadTableList();
-  if (!list.length) return null;
 
-  const rentTbl = pickTable(list, ["임대료", "중대형"], ["층별", "지수"]);
-  const vacTbl = pickTable(list, ["공실률", "중대형"], []);
-  if (!rentTbl && !vacTbl) return null;
-
-  const [rentRows, vacRows] = await Promise.all([
-    rentTbl ? loadTableData(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD) : Promise.resolve([]),
-    vacTbl ? loadTableData(vacTbl.STATBL_ID, vacTbl.DTACYCLE_CD) : Promise.resolve([]),
-  ]);
-
+  const { rentRows, vacRows } = await fetchRentVacRows();
   const rent = seoulLatest(rentRows);
   const vac = seoulLatest(vacRows);
   if (!rent && !vac) return null;

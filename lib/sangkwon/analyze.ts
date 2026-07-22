@@ -90,7 +90,7 @@ export async function analyzeLocation(
     seoulConfigured() ? withTimeout(getDongSales(dong, admCode), 9000) : Promise.resolve(null),
     seoulConfigured() ? withTimeout(getDongStoreDynamics(dong, admCode), 12000) : Promise.resolve(null),
     seoulConfigured() ? withTimeout(getConsumption(dong, admCode), 8000) : Promise.resolve(null),
-    roneConfigured() ? withTimeout(getRentVacancy(), 12000) : Promise.resolve(null),
+    roneConfigured() ? withTimeout(getRentVacancy(), 18000) : Promise.resolve(null),
   ]);
 
   // 9. 집객시설
