@@ -9,12 +9,32 @@ import {
 import { storesInRadius, datagokrConfigured } from "./datagokr";
 
 /** 반경 기준 팩터의 분석 반경(m) */
-const RADIUS = 500;
+export const RADIUS = 500;
 /** 지하철 접근성 판단 반경(m) */
 const SUBWAY_RADIUS = 800;
 
 function clamp(n: number, lo = 20, hi = 99): number {
   return Math.min(hi, Math.max(lo, Math.round(n)));
+}
+
+/** 서울 외 지역 안내용 결과 */
+function notSeoulResult(
+  center: LatLng,
+  areaName: string,
+  sido?: string
+): AnalysisResult {
+  return {
+    center,
+    address: areaName,
+    areaName,
+    totalScore: 0,
+    grade: "-",
+    factors: [],
+    demo: false,
+    generatedAt: "",
+    notSeoul: true,
+    sido,
+  };
 }
 
 /**
@@ -26,29 +46,34 @@ function clamp(n: number, lo = 20, hi = 99): number {
  *  - 입지접근성(8) : 카카오 지하철역 최근접 거리, 실데이터
  *  - 지역명        : 카카오 행정동 실데이터
  *  - 나머지(2·3·4·5·6·7): 데모 (서울 열린데이터광장 행정동 연동 예정)
+ *
+ * 서울 외 지역은 분석하지 않고 notSeoul 결과를 반환한다.
  */
 export async function analyzeLocation(
   center: LatLng,
   addressHint: string
 ): Promise<AnalysisResult> {
+  // 1) 먼저 시/도 확인 → 서울 외면 즉시 차단
+  const region = kakaoConfigured() ? await reverseRegion(center) : null;
+  if (region?.sido && !region.sido.includes("서울")) {
+    return notSeoulResult(center, region.name || addressHint, region.sido);
+  }
+  const areaName = region?.name || addressHint;
+
+  // 2) 실데이터 팩터 병렬 조회
   const factors = buildDemoFactors(center);
   const patch = (key: FactorKey, p: Partial<FactorScore>) => {
     const f = factors.find((x) => x.key === key);
     if (f) Object.assign(f, p);
   };
 
-  let areaName = addressHint;
-
-  const [region, poi, subway, stores] = await Promise.all([
-    kakaoConfigured() ? reverseRegion(center) : Promise.resolve(null),
+  const [poi, subway, stores] = await Promise.all([
     kakaoConfigured() ? countAttractionPois(center, RADIUS) : Promise.resolve(null),
     kakaoConfigured() ? nearestSubway(center, SUBWAY_RADIUS) : Promise.resolve(null),
     datagokrConfigured() ? storesInRadius(center, RADIUS) : Promise.resolve(null),
   ]);
 
-  if (region?.name) areaName = region.name;
-
-  // 9. 집객시설 (문화·관광·대형마트)
+  // 9. 집객시설
   if (poi != null) {
     patch("poi", {
       source: "live",
@@ -63,7 +88,6 @@ export async function analyzeLocation(
       const d = subway.nearestDist;
       patch("access", {
         source: "live",
-        // 0m→95점, 800m→약 40점 선형
         score: clamp(95 - (d / SUBWAY_RADIUS) * 55),
         detail: `가장 가까운 지하철역 ${subway.nearestName ?? "역"} 약 ${d}m · 반경 ${SUBWAY_RADIUS}m 내 ${subway.count}개 (카카오 실데이터)`,
       });
@@ -92,5 +116,6 @@ export async function analyzeLocation(
 
   const result = assembleResult(center, addressHint, areaName, factors);
   result.demo = factors.every((f) => f.source === "demo");
+  result.sido = region?.sido;
   return result;
 }

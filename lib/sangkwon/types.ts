@@ -38,6 +38,10 @@ export interface AnalysisResult {
   /** 전체가 데모 데이터로 구성됐는지 여부 */
   demo: boolean;
   generatedAt: string;
+  /** 서울 외 지역이면 true (이 경우 분석 결과 대신 안내) */
+  notSeoul?: boolean;
+  /** 선택 위치의 시/도 (예: "서울특별시", "경기도") */
+  sido?: string;
 }
 
 export interface GeocodeResult {
@@ -45,4 +49,27 @@ export interface GeocodeResult {
   roadAddress?: string;
   placeName?: string;
   center: LatLng;
+}
+
+/** 업종 정의 */
+export interface Industry {
+  id: string;
+  label: string;
+  keyword: string; // 카카오 키워드 검색용
+}
+
+/** 업종별 심층 분석 결과 */
+export interface IndustryResult {
+  industryId: string;
+  industryLabel: string;
+  areaName: string;
+  /** 반경 내 동종 점포 수 (실데이터 실패 시 null) */
+  storeCount: number | null;
+  radius: number;
+  /** 경쟁강도 0~100 (높을수록 경쟁 치열) */
+  competition: number;
+  /** 기회지수 0~100 (경쟁 대비 종합상권 매력, 높을수록 유리) */
+  opportunity: number;
+  source: "live" | "demo";
+  note: string;
 }

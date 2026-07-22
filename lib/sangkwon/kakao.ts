@@ -64,10 +64,10 @@ export async function geocode(query: string): Promise<GeocodeResult | null> {
   return null;
 }
 
-/** 좌표 → 행정구역 명칭 (예: "중구 명동") + 행정동 코드 */
+/** 좌표 → 행정구역 명칭 (예: "중구 명동") + 시/도 + 행정동 코드 */
 export async function reverseRegion(
   center: LatLng
-): Promise<{ name: string; admCode?: string } | null> {
+): Promise<{ name: string; sido?: string; admCode?: string } | null> {
   const headers = authHeader();
   if (!headers) return null;
   try {
@@ -79,6 +79,7 @@ export async function reverseRegion(
     const data = (await res.json()) as {
       documents?: Array<{
         region_type: string;
+        region_1depth_name?: string;
         region_2depth_name?: string;
         region_3depth_name?: string;
         code?: string;
@@ -90,7 +91,31 @@ export async function reverseRegion(
     const name = [doc.region_2depth_name, doc.region_3depth_name]
       .filter(Boolean)
       .join(" ");
-    return { name, admCode: doc.code };
+    return { name, sido: doc.region_1depth_name, admCode: doc.code };
+  } catch {
+    return null;
+  }
+}
+
+/** 키워드(업종명) 반경 검색 → 해당 업종 점포 수 */
+export async function countByKeyword(
+  center: LatLng,
+  keyword: string,
+  radius = 500
+): Promise<number | null> {
+  const headers = authHeader();
+  if (!headers) return null;
+  try {
+    const url = new URL(`${KAKAO_BASE}/v2/local/search/keyword.json`);
+    url.searchParams.set("query", keyword);
+    url.searchParams.set("x", String(center.lng));
+    url.searchParams.set("y", String(center.lat));
+    url.searchParams.set("radius", String(radius));
+    url.searchParams.set("size", "1");
+    const res = await fetch(url, { headers, cache: "no-store" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { meta?: { total_count?: number } };
+    return data.meta?.total_count ?? null;
   } catch {
     return null;
   }
