@@ -27,3 +27,5 @@ npm run dev                  # http://localhost:3000
 ```
 
 키가 없어도 좌표 기반 데모 데이터로 전체 흐름이 동작하며, 키를 넣으면 실데이터로 전환됩니다.
+
+<!-- deploy: production branch activated -->
