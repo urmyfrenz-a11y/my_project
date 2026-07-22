@@ -114,15 +114,48 @@ interface DataRow {
   UI_NM?: string;
 }
 
-async function loadTableData(statblId: string, dtacycle?: string): Promise<DataRow[]> {
+async function loadTableData(
+  statblId: string,
+  dtacycle?: string,
+  wrttime?: string
+): Promise<DataRow[]> {
   const key = process.env.R_ONE_KEY;
   if (!key) return [];
   let url = `${BASE}/SttsApiTblData.do?KEY=${encodeURIComponent(key)}&Type=json&STATBL_ID=${encodeURIComponent(
     statblId
   )}&pIndex=1&pSize=2000`;
   if (dtacycle) url += `&DTACYCLE_CD=${encodeURIComponent(dtacycle)}`;
+  if (wrttime) url += `&WRTTIME_IDTFR_ID=${encodeURIComponent(wrttime)}`;
   const json = await fetchJson(url);
   return rowsOf<DataRow>(json, "SttsApiTblData");
+}
+
+/** 분기 시점코드 후보를 최신→과거로 생성 (형식 미확정 → 여러 형식 병행) */
+function quarterCandidates(): string[] {
+  const out: string[] = [];
+  for (let y = 2026; y >= 2024; y--) {
+    for (let q = 4; q >= 1; q--) {
+      out.push(`${y}${q}`); // 20243
+      out.push(`${y}0${q}`); // 202403
+    }
+  }
+  return out;
+}
+
+/** 데이터가 나올 때까지 분기 시점코드를 탐색해 rows 반환 */
+async function loadLatestQuarter(
+  statblId: string,
+  dtacycle?: string
+): Promise<{ rows: DataRow[]; wrttime: string } | null> {
+  // 1) 시점 미지정으로 전체 시도 (되면 최상)
+  const all = await loadTableData(statblId, dtacycle);
+  if (all.length) return { rows: all, wrttime: "" };
+  // 2) 분기 시점코드 후보 탐색
+  for (const w of quarterCandidates()) {
+    const rows = await loadTableData(statblId, dtacycle, w);
+    if (rows.length) return { rows, wrttime: w };
+  }
+  return null;
 }
 
 /** 서울(시도 집계) 최신 분기 값 추출 */
@@ -170,13 +203,13 @@ export async function getRentVacancy(): Promise<RentVacancy | null> {
   const vacTbl = pickTable(list, ["공실률", "중대형"], []);
   if (!rentTbl && !vacTbl) return null;
 
-  const [rentRows, vacRows] = await Promise.all([
-    rentTbl ? loadTableData(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD) : Promise.resolve([]),
-    vacTbl ? loadTableData(vacTbl.STATBL_ID, vacTbl.DTACYCLE_CD) : Promise.resolve([]),
+  const [rentRes, vacRes] = await Promise.all([
+    rentTbl ? loadLatestQuarter(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD) : Promise.resolve(null),
+    vacTbl ? loadLatestQuarter(vacTbl.STATBL_ID, vacTbl.DTACYCLE_CD) : Promise.resolve(null),
   ]);
 
-  const rent = seoulLatest(rentRows);
-  const vac = seoulLatest(vacRows);
+  const rent = rentRes ? seoulLatest(rentRes.rows) : null;
+  const vac = vacRes ? seoulLatest(vacRes.rows) : null;
   if (!rent && !vac) return null;
 
   const result: RentVacancy = {
@@ -195,22 +228,24 @@ export async function debugRent() {
   const list = await loadTableList();
   const rentTbl = pickTable(list, ["임대료", "중대형"], ["층별", "지수"]);
   const vacTbl = pickTable(list, ["공실률", "중대형"], []);
-  const [rentRows, vacRows] = await Promise.all([
-    rentTbl ? loadTableData(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD) : Promise.resolve([]),
-    vacTbl ? loadTableData(vacTbl.STATBL_ID, vacTbl.DTACYCLE_CD) : Promise.resolve([]),
+  const [rentRes, vacRes] = await Promise.all([
+    rentTbl ? loadLatestQuarter(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD) : Promise.resolve(null),
+    vacTbl ? loadLatestQuarter(vacTbl.STATBL_ID, vacTbl.DTACYCLE_CD) : Promise.resolve(null),
   ]);
-  const rentCandidates = list
-    .filter((t) => typeof t.STATBL_NM === "string" && t.STATBL_NM.includes("임대") && t.STATBL_NM.includes("상가"))
-    .map((t) => ({ id: t.STATBL_ID, nm: t.STATBL_NM, cyc: t.DTACYCLE_CD }))
-    .slice(0, 40);
+  const rentRows = rentRes?.rows ?? [];
+  const vacRows = vacRes?.rows ?? [];
   return {
     tableCount: list.length,
-    rentTbl,
-    vacTbl,
-    rentSampleRows: rentRows.slice(0, 4),
-    vacSampleRows: vacRows.slice(0, 4),
+    rentTbl: rentTbl ? { id: rentTbl.STATBL_ID, nm: rentTbl.STATBL_NM, cyc: rentTbl.DTACYCLE_CD } : null,
+    vacTbl: vacTbl ? { id: vacTbl.STATBL_ID, nm: vacTbl.STATBL_NM, cyc: vacTbl.DTACYCLE_CD } : null,
+    rentWrttime: rentRes?.wrttime ?? null,
+    vacWrttime: vacRes?.wrttime ?? null,
+    rentRowCount: rentRows.length,
+    vacRowCount: vacRows.length,
+    rentSampleRows: rentRows.slice(0, 3),
+    vacSampleRows: vacRows.slice(0, 3),
+    seoulRows: rentRows.filter((r) => typeof r.CLS_NM === "string" && r.CLS_NM.includes("서울")).slice(0, 8),
     parsedRent: seoulLatest(rentRows),
     parsedVac: seoulLatest(vacRows),
-    rentCandidates,
   };
 }
