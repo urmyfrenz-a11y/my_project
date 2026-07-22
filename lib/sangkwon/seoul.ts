@@ -383,3 +383,85 @@ export async function getIndustryDetail(
     franchiseRate: stores ? (frc / stores) * 100 : 0,
   };
 }
+
+// ── 소비(소득소비, 지출) ── VwsmAdstrdNcmCnsmpW
+interface CnsmpRow extends DongRow {
+  EXPNDTR_TOTAMT: number;
+  FDSTFFS_EXPNDTR_TOTAMT: number;
+  CLTHS_FTWR_EXPNDTR_TOTAMT: number;
+  LVSPL_EXPNDTR_TOTAMT: number;
+  MCP_EXPNDTR_TOTAMT: number;
+  TRNSPORT_EXPNDTR_TOTAMT: number;
+  EDC_EXPNDTR_TOTAMT: number;
+  PLESR_EXPNDTR_TOTAMT: number;
+  LSR_CLTUR_EXPNDTR_TOTAMT: number;
+  ETC_EXPNDTR_TOTAMT: number;
+  FD_EXPNDTR_TOTAMT: number;
+}
+const CNSMP_CATS: { key: keyof CnsmpRow; label: string }[] = [
+  { key: "FD_EXPNDTR_TOTAMT", label: "음식(외식)" },
+  { key: "FDSTFFS_EXPNDTR_TOTAMT", label: "식료품" },
+  { key: "MCP_EXPNDTR_TOTAMT", label: "의료비" },
+  { key: "EDC_EXPNDTR_TOTAMT", label: "교육" },
+  { key: "LSR_CLTUR_EXPNDTR_TOTAMT", label: "여가·문화" },
+  { key: "CLTHS_FTWR_EXPNDTR_TOTAMT", label: "의류·신발" },
+  { key: "TRNSPORT_EXPNDTR_TOTAMT", label: "교통" },
+  { key: "LVSPL_EXPNDTR_TOTAMT", label: "생활용품" },
+  { key: "PLESR_EXPNDTR_TOTAMT", label: "유흥" },
+];
+export interface DongConsumption {
+  quarter: string;
+  name: string;
+  total: number;
+  topCategory?: string;
+}
+// 동→최신분기 row (전 분기 정렬이 섞여 있어 전체를 받아 동별 최신 선택)
+let cnsmpCache: Map<string, CnsmpRow> | null = null;
+
+async function buildCnsmpCache(): Promise<boolean> {
+  if (cnsmpCache) return true;
+  const pages: Promise<CnsmpRow[] | null>[] = [];
+  for (let s = 1; s <= 9001; s += 1000) {
+    pages.push(fetchSeoul<CnsmpRow>("VwsmAdstrdNcmCnsmpW", s, s + 999));
+  }
+  const results = await Promise.all(pages);
+  const map = new Map<string, CnsmpRow>();
+  for (const rows of results) {
+    if (!rows) continue;
+    for (const r of rows) {
+      const prev = map.get(r.ADSTRD_CD);
+      if (!prev || r.STDR_YYQU_CD > prev.STDR_YYQU_CD) map.set(r.ADSTRD_CD, r);
+    }
+  }
+  if (map.size === 0) return false;
+  cnsmpCache = map;
+  return true;
+}
+
+export async function getConsumption(
+  dongName?: string,
+  admCode?: string
+): Promise<DongConsumption | null> {
+  const ok = await buildCnsmpCache();
+  if (!ok || !cnsmpCache) return null;
+  for (const [code, r] of cnsmpCache) {
+    if (dongKeyMatch(code, r.ADSTRD_CD_NM, dongName, admCode)) {
+      let topCategory: string | undefined;
+      let topVal = -1;
+      for (const c of CNSMP_CATS) {
+        const v = Number(r[c.key]) || 0;
+        if (v > topVal) {
+          topVal = v;
+          topCategory = c.label;
+        }
+      }
+      return {
+        quarter: r.STDR_YYQU_CD,
+        name: r.ADSTRD_CD_NM,
+        total: Number(r.EXPNDTR_TOTAMT) || 0,
+        topCategory,
+      };
+    }
+  }
+  return null;
+}

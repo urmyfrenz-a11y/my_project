@@ -12,6 +12,7 @@ import {
   getResidentPopulation,
   getDongSales,
   getDongStoreDynamics,
+  getConsumption,
   seoulConfigured,
 } from "./seoul";
 
@@ -77,7 +78,7 @@ export async function analyzeLocation(
     if (f) Object.assign(f, p);
   };
 
-  const [poi, subway, stores, living, resident, sales, dynamics] = await Promise.all([
+  const [poi, subway, stores, living, resident, sales, dynamics, cnsmp] = await Promise.all([
     kakaoConfigured() ? countAttractionPois(center, RADIUS) : Promise.resolve(null),
     kakaoConfigured() ? nearestSubway(center, SUBWAY_RADIUS) : Promise.resolve(null),
     datagokrConfigured() ? storesInRadius(center, RADIUS) : Promise.resolve(null),
@@ -85,6 +86,7 @@ export async function analyzeLocation(
     seoulConfigured() ? withTimeout(getResidentPopulation(dong, admCode), 6000) : Promise.resolve(null),
     seoulConfigured() ? withTimeout(getDongSales(dong, admCode), 9000) : Promise.resolve(null),
     seoulConfigured() ? withTimeout(getDongStoreDynamics(dong, admCode), 12000) : Promise.resolve(null),
+    seoulConfigured() ? withTimeout(getConsumption(dong, admCode), 8000) : Promise.resolve(null),
   ]);
 
   // 9. 집객시설
@@ -169,6 +171,17 @@ export async function analyzeLocation(
       source: "live",
       score: clamp(95 - dynamics.avgClsbiz * 3),
       detail: `${dynamics.name} 개업률 ${dynamics.avgOpbiz.toFixed(1)}% / 폐업률 ${dynamics.avgClsbiz.toFixed(1)}% · 점포 ${dynamics.totalStores.toLocaleString()}개 (${dynamics.quarter}, 서울 실데이터)`,
+    });
+  }
+
+  // 4. 소비력 (서울 소비지출)
+  if (cnsmp && cnsmp.total > 0) {
+    patch("spending", {
+      source: "live",
+      score: clamp(20 + Math.min(1, (Math.log10(cnsmp.total) - 8.7) / 2) * 79),
+      detail: `${cnsmp.name} 분기 소비지출 약 ${Math.round(cnsmp.total / 1e8).toLocaleString()}억원${
+        cnsmp.topCategory ? ` · 최다 지출 ${cnsmp.topCategory}` : ""
+      } (${cnsmp.quarter}, 서울 실데이터)`,
     });
   }
 
