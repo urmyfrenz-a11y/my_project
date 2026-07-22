@@ -7,6 +7,12 @@ import {
   kakaoConfigured,
 } from "./kakao";
 import { storesInRadius, datagokrConfigured } from "./datagokr";
+import {
+  getLivingPopulation,
+  getResidentPopulation,
+  getDongSales,
+  seoulConfigured,
+} from "./seoul";
 
 /** 반경 기준 팩터의 분석 반경(m) */
 export const RADIUS = 500;
@@ -17,12 +23,15 @@ function clamp(n: number, lo = 20, hi = 99): number {
   return Math.min(hi, Math.max(lo, Math.round(n)));
 }
 
-/** 서울 외 지역 안내용 결과 */
-function notSeoulResult(
-  center: LatLng,
-  areaName: string,
-  sido?: string
-): AnalysisResult {
+/** 느린 호출이 전체 분석을 막지 않도록 타임아웃 래핑 */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    p,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
+function notSeoulResult(center: LatLng, areaName: string, sido?: string): AnalysisResult {
   return {
     center,
     address: areaName,
@@ -40,37 +49,40 @@ function notSeoulResult(
 /**
  * 좌표 → 상권 분석 결과.
  *
- * 실데이터 연결 현황:
- *  - 점포현황(1)   : 소상공인 상가정보, 반경 500m 실데이터
- *  - 집객시설(9)   : 카카오 문화·관광·대형마트, 반경 500m 실데이터
- *  - 입지접근성(8) : 카카오 지하철역 최근접 거리, 실데이터
- *  - 지역명        : 카카오 행정동 실데이터
- *  - 나머지(2·3·4·5·6·7): 데모 (서울 열린데이터광장 행정동 연동 예정)
- *
- * 서울 외 지역은 분석하지 않고 notSeoul 결과를 반환한다.
+ * 실데이터:
+ *  - 점포현황(1)   : 소상공인 상가정보 (반경 500m)
+ *  - 집객시설(9)   : 카카오 문화·관광·대형마트 (반경 500m)
+ *  - 입지접근성(8) : 카카오 지하철역 최근접 거리
+ *  - 유동인구(2)   : 서울 생활인구(행정동)
+ *  - 배후수요(3)   : 서울 상주인구·가구·아파트세대(행정동)
+ *  - 매출(5)       : 서울 추정매출(행정동 업종 합계)
+ *  - 소비력(4)·경쟁(6)·임대료(7) : 데모 (서비스명/키 미확보)
  */
 export async function analyzeLocation(
   center: LatLng,
   addressHint: string
 ): Promise<AnalysisResult> {
-  // 1) 먼저 시/도 확인 → 서울 외면 즉시 차단
   const region = kakaoConfigured() ? await reverseRegion(center) : null;
   if (region?.sido && !region.sido.includes("서울")) {
     return notSeoulResult(center, region.name || addressHint, region.sido);
   }
   const areaName = region?.name || addressHint;
+  const dong = region?.dong;
+  const admCode = region?.admCode;
 
-  // 2) 실데이터 팩터 병렬 조회
   const factors = buildDemoFactors(center);
   const patch = (key: FactorKey, p: Partial<FactorScore>) => {
     const f = factors.find((x) => x.key === key);
     if (f) Object.assign(f, p);
   };
 
-  const [poi, subway, stores] = await Promise.all([
+  const [poi, subway, stores, living, resident, sales] = await Promise.all([
     kakaoConfigured() ? countAttractionPois(center, RADIUS) : Promise.resolve(null),
     kakaoConfigured() ? nearestSubway(center, SUBWAY_RADIUS) : Promise.resolve(null),
     datagokrConfigured() ? storesInRadius(center, RADIUS) : Promise.resolve(null),
+    seoulConfigured() ? withTimeout(getLivingPopulation(dong, admCode), 6000) : Promise.resolve(null),
+    seoulConfigured() ? withTimeout(getResidentPopulation(dong, admCode), 6000) : Promise.resolve(null),
+    seoulConfigured() ? withTimeout(getDongSales(dong, admCode), 8000) : Promise.resolve(null),
   ]);
 
   // 9. 집객시설
@@ -82,7 +94,7 @@ export async function analyzeLocation(
     });
   }
 
-  // 8. 입지·접근성 (지하철)
+  // 8. 입지·접근성
   if (subway) {
     if (subway.count > 0 && subway.nearestDist != null) {
       const d = subway.nearestDist;
@@ -100,17 +112,52 @@ export async function analyzeLocation(
     }
   }
 
-  // 1. 점포현황 (상가정보)
+  // 1. 점포현황
   if (stores) {
-    const catText = stores.byCategory
-      .map((c) => `${c.name} ${c.count}`)
-      .join(", ");
+    const catText = stores.byCategory.map((c) => `${c.name} ${c.count}`).join(", ");
     patch("stores", {
       source: "live",
       score: clamp(20 + Math.min(1, stores.total / 400) * 79),
       detail: `반경 ${RADIUS}m 내 점포 ${stores.total.toLocaleString()}개${
         catText ? ` · 상위 업종 ${catText}` : ""
       } (소상공인 상가정보 실데이터)`,
+    });
+  }
+
+  // 2. 유동인구 (서울 생활인구)
+  if (living) {
+    const v = Number(living.TOT_FLPOP_CO) || 0;
+    patch("floating", {
+      source: "live",
+      score: clamp(20 + Math.min(1, v / 6_000_000) * 79),
+      detail: `${living.ADSTRD_CD_NM} 분기 생활인구 약 ${v.toLocaleString()}명 (${living.STDR_YYQU_CD}, 서울 실데이터)`,
+    });
+  }
+
+  // 3. 배후수요 (서울 상주인구·가구)
+  if (resident) {
+    const rep = Number(resident.TOT_REPOP_CO) || 0;
+    const hh = Number(resident.TOT_HSHLD_CO) || 0;
+    const apt = Number(resident.APT_HSHLD_CO) || 0;
+    patch("demand", {
+      source: "live",
+      score: clamp(20 + Math.min(1, rep / 45000) * 79),
+      detail: `${resident.ADSTRD_CD_NM} 상주인구 ${rep.toLocaleString()}명 · 총가구 ${hh.toLocaleString()}${
+        apt ? ` (아파트 ${apt.toLocaleString()}세대)` : ""
+      } (${resident.STDR_YYQU_CD}, 서울 실데이터)`,
+    });
+  }
+
+  // 5. 매출 (서울 추정매출 동 합계)
+  if (sales && sales.total > 0) {
+    const eok = sales.total / 1e8; // 억원
+    const topText = sales.top.map((t) => t.name).slice(0, 2).join(", ");
+    patch("sales", {
+      source: "live",
+      score: clamp(20 + Math.min(1, (Math.log10(sales.total) - 8.5) / 2.5) * 79),
+      detail: `${sales.name} 분기 추정매출 약 ${Math.round(eok).toLocaleString()}억원${
+        topText ? ` · 상위 업종 ${topText}` : ""
+      } (${sales.quarter}, 서울 실데이터)`,
     });
   }
 

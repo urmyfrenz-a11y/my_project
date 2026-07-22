@@ -64,10 +64,16 @@ export async function geocode(query: string): Promise<GeocodeResult | null> {
   return null;
 }
 
-/** 좌표 → 행정구역 명칭 (예: "중구 명동") + 시/도 + 행정동 코드 */
+/** 좌표 → 행정구역 명칭 (예: "중구 명동") + 시/도 + 구 + 행정동 + 코드 */
 export async function reverseRegion(
   center: LatLng
-): Promise<{ name: string; sido?: string; admCode?: string } | null> {
+): Promise<{
+  name: string;
+  sido?: string;
+  gu?: string;
+  dong?: string;
+  admCode?: string;
+} | null> {
   const headers = authHeader();
   if (!headers) return null;
   try {
@@ -91,7 +97,13 @@ export async function reverseRegion(
     const name = [doc.region_2depth_name, doc.region_3depth_name]
       .filter(Boolean)
       .join(" ");
-    return { name, sido: doc.region_1depth_name, admCode: doc.code };
+    return {
+      name,
+      sido: doc.region_1depth_name,
+      gu: doc.region_2depth_name,
+      dong: doc.region_3depth_name,
+      admCode: doc.code,
+    };
   } catch {
     return null;
   }
