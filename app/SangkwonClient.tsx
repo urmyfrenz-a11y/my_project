@@ -27,6 +27,7 @@ export default function SangkwonClient() {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<"overall" | "industry">("overall");
 
   useEffect(() => {
@@ -45,6 +46,10 @@ export default function SangkwonClient() {
     }
     kakaoMapRef.current.panTo(pos);
     setSelected({ center, label });
+    // 새 위치를 고르면 이전 분석 결과·안내를 지워 혼동 방지
+    setResult(null);
+    setError(null);
+    setNotice(null);
   }, []);
 
   useEffect(() => {
@@ -100,7 +105,13 @@ export default function SangkwonClient() {
         setError(data.error ?? "검색에 실패했습니다.");
         return;
       }
-      placeMarker(data.center, data.placeName || data.roadAddress || data.address || query);
+      const label = data.placeName || data.roadAddress || data.address || query;
+      placeMarker(data.center, label);
+      // 검색 결과 주소로 서울 외 지역이면 즉시 안내 (분석 전 사전 고지)
+      const addr: string = data.roadAddress || data.address || "";
+      if (addr && !/^서울/.test(addr)) {
+        setNotice(`선택하신 위치는 서울 외 지역(${addr.split(" ")[0]})으로 보입니다. 이 서비스는 서울 지역만 분석합니다.`);
+      }
     } catch {
       setError("검색 중 오류가 발생했습니다.");
     } finally {
@@ -112,6 +123,7 @@ export default function SangkwonClient() {
     if (!selected) return;
     setAnalyzing(true);
     setError(null);
+    setNotice(null);
     setResult(null);
     try {
       const res = await fetch("/api/sangkwon/analyze", {
@@ -207,6 +219,12 @@ export default function SangkwonClient() {
 
       {error && (
         <p className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>
+      )}
+      {notice && (
+        <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="mt-0.5 shrink-0">🚫</span>
+          <span>{notice}</span>
+        </p>
       )}
 
       {/* ── 지도 ── */}
