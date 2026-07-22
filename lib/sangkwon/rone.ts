@@ -43,6 +43,35 @@ function headOf(json: unknown, svc: string): Head | null {
   return null;
 }
 
+/** 진단용: 원본 응답을 그대로 반환 */
+export async function rawTblData(statblId: string, dtacycle?: string, wrttime?: string) {
+  const key = process.env.R_ONE_KEY;
+  if (!key) return { error: "no key" };
+  let url = `${BASE}/SttsApiTblData.do?KEY=${encodeURIComponent(key)}&Type=json&STATBL_ID=${encodeURIComponent(
+    statblId
+  )}&pIndex=1&pSize=100`;
+  if (dtacycle) url += `&DTACYCLE_CD=${encodeURIComponent(dtacycle)}`;
+  if (wrttime) url += `&WRTTIME_IDTFR_ID=${encodeURIComponent(wrttime)}`;
+  try {
+    const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+    const text = await res.text();
+    let rootKeys: string[] = [];
+    try {
+      rootKeys = Object.keys(JSON.parse(text));
+    } catch {
+      /* not json */
+    }
+    return {
+      status: res.status,
+      urlShown: url.replace(encodeURIComponent(key), "***"),
+      rootKeys,
+      textHead: text.slice(0, 1500),
+    };
+  } catch (e) {
+    return { error: String(e) };
+  }
+}
+
 async function fetchJson(url: string): Promise<unknown | null> {
   try {
     const res = await fetch(url, {
@@ -247,5 +276,8 @@ export async function debugRent() {
     seoulRows: rentRows.filter((r) => typeof r.CLS_NM === "string" && r.CLS_NM.includes("서울")).slice(0, 8),
     parsedRent: seoulLatest(rentRows),
     parsedVac: seoulLatest(vacRows),
+    raw_noTime: rentTbl ? await rawTblData(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD) : null,
+    raw_202403: rentTbl ? await rawTblData(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD, "202403") : null,
+    raw_202503: rentTbl ? await rawTblData(rentTbl.STATBL_ID, rentTbl.DTACYCLE_CD, "202503") : null,
   };
 }
