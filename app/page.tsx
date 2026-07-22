@@ -48,7 +48,8 @@ export default function SangkwonPage() {
           />
           <div className="relative mx-auto max-w-4xl px-5 pb-6 pt-12 text-center">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-100 bg-white px-3 py-1 text-xs font-semibold text-indigo-600 shadow-sm">
-              서울 한정 · 공공데이터 기반 상권 리포트
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+              서울 지역 대상 · 공공데이터 기반 상권 분석
             </span>
             <h1 className="mt-5 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-[2.6rem] sm:leading-[1.1]">
               지도로 찾는{" "}
@@ -57,7 +58,7 @@ export default function SangkwonPage() {
               </span>
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-sm text-slate-500 sm:text-base">
-              위치를 선택하거나 주소를 검색하면 9개 팩터로 상권을 분석해 종합 점수와 한 장의 인포그래픽으로 보여줍니다.
+              지도에서 위치를 선택하거나 주소를 검색하면 핵심 요인 중심으로 상권을 분석해 종합 점수와 인사이트를 도출합니다.
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-1.5">
               {FACTORS.map((f) => (

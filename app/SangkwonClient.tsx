@@ -212,9 +212,9 @@ export default function SangkwonClient() {
       {/* ── 지도 ── */}
       <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm">
         {KAKAO_JS_KEY ? (
-          <div ref={mapRef} className="h-[380px] w-full sm:h-[440px]" />
+          <div ref={mapRef} className="h-[300px] w-full sm:h-[350px]" />
         ) : (
-          <div className="flex h-[380px] w-full flex-col items-center justify-center gap-3 px-6 text-center sm:h-[440px]">
+          <div className="flex h-[300px] w-full flex-col items-center justify-center gap-3 px-6 text-center sm:h-[350px]">
             <p className="max-w-sm text-sm text-slate-500">
               카카오 지도 키가 설정되면 여기에 서울 지도가 표시됩니다.
             </p>
