@@ -1,10 +1,9 @@
 // 서울 열린데이터광장 상권분석서비스(행정동 단위) 클라이언트 (서버 전용)
-// 확인된 서비스명(Vwsm{Adstrd}{지표}W) — 행정동당 1행(매출은 업종별 다행).
-//  - VwsmAdstrdFlpopW : 생활인구(유동인구)  TOT_FLPOP_CO
-//  - VwsmAdstrdRepopW : 상주인구           TOT_REPOP_CO, TOT_HSHLD_CO, APT_HSHLD_CO
-//  - VwsmAdstrdSelngW : 추정매출(업종별)   THSMON_SELNG_AMT
-// 위치 필터는 분기(STDR_YYQU_CD)만 동작하고 행정동 코드로는 안 되므로,
-// 한 분기 데이터를 받아 행정동명/코드로 매칭한다.
+//  - VwsmAdstrdFlpopW : 생활인구(유동인구)
+//  - VwsmAdstrdRepopW : 상주인구·가구·아파트세대
+//  - VwsmAdstrdSelngW : 추정매출(업종별)
+//  - VwsmAdstrdStorW  : 점포·개폐업(업종별)
+// 위치 필터는 분기만 동작하므로 한 분기 데이터를 받아 행정동명/코드로 매칭.
 
 const BASE = "http://openapi.seoul.go.kr:8088";
 
@@ -22,14 +21,13 @@ async function fetchSeoul<T>(
   svc: string,
   start: number,
   end: number,
-  args = "",
-  revalidate = 86400
+  args = ""
 ): Promise<T[] | null> {
   const key = process.env.SEOUL_OPENAPI_KEY;
   if (!key) return null;
   const url = `${BASE}/${key}/json/${svc}/${start}/${end}${args}`;
   try {
-    const res = await fetch(url, { next: { revalidate } });
+    const res = await fetch(url, { next: { revalidate: 86400 } });
     if (!res.ok) return null;
     const data = (await res.json()) as Record<string, Block<T>>;
     const block = data[svc];
@@ -46,12 +44,7 @@ interface DongRow {
   STDR_YYQU_CD: string;
 }
 
-/** 행정동명(우선) 또는 코드로 매칭, 여러 분기 중 최신 선택 */
-function matchDong<T extends DongRow>(
-  rows: T[],
-  dongName?: string,
-  admCode?: string
-): T | null {
+function matchDong<T extends DongRow>(rows: T[], dongName?: string, admCode?: string): T | null {
   const code8 = admCode?.slice(0, 8);
   const cand = rows.filter(
     (r) =>
@@ -62,7 +55,15 @@ function matchDong<T extends DongRow>(
   return cand.reduce((a, b) => (b.STDR_YYQU_CD > a.STDR_YYQU_CD ? b : a));
 }
 
-// ── 유동인구(생활인구) ─────────────────────────────
+function dongKeyMatch(code: string, name: string, dongName?: string, admCode?: string): boolean {
+  const code8 = admCode?.slice(0, 8);
+  return Boolean(
+    (dongName && name === dongName) ||
+      (code8 && (code === code8 || admCode?.startsWith(code)))
+  );
+}
+
+// ── 유동인구(생활인구) ──
 interface FlpopRow extends DongRow {
   TOT_FLPOP_CO: number;
 }
@@ -71,7 +72,7 @@ export async function getLivingPopulation(dongName?: string, admCode?: string) {
   return rows ? matchDong(rows, dongName, admCode) : null;
 }
 
-// ── 상주인구(배후수요) ─────────────────────────────
+// ── 상주인구(배후수요) ──
 interface RepopRow extends DongRow {
   TOT_REPOP_CO: number;
   TOT_HSHLD_CO: number;
@@ -82,131 +83,184 @@ export async function getResidentPopulation(dongName?: string, admCode?: string)
   return rows ? matchDong(rows, dongName, admCode) : null;
 }
 
-// ── 추정매출(업종별 → 동 합계) ─────────────────────
+// ── 추정매출(업종별) — 동 합계 + 업종별 상세 캐시 ──
 interface SalesRow extends DongRow {
   SVC_INDUTY_CD_NM: string;
   THSMON_SELNG_AMT: number;
+  THSMON_SELNG_CO: number;
+  TMZON_00_06_SELNG_AMT: number;
+  TMZON_06_11_SELNG_AMT: number;
+  TMZON_11_14_SELNG_AMT: number;
+  TMZON_14_17_SELNG_AMT: number;
+  TMZON_17_21_SELNG_AMT: number;
+  TMZON_21_24_SELNG_AMT: number;
+  ML_SELNG_AMT: number;
+  FML_SELNG_AMT: number;
+  AGRDE_10_SELNG_AMT: number;
+  AGRDE_20_SELNG_AMT: number;
+  AGRDE_30_SELNG_AMT: number;
+  AGRDE_40_SELNG_AMT: number;
+  AGRDE_50_SELNG_AMT: number;
+  AGRDE_60_ABOVE_SELNG_AMT: number;
 }
-interface DongSales {
+interface IndutySales {
+  amt: number;
+  cnt: number;
+  tmzon: number[]; // 6
+  ml: number;
+  fml: number;
+  age: number[]; // 6
+}
+interface DongSalesEntry {
+  name: string;
+  total: number;
+  top: { name: string; amt: number }[];
+  byInduty: Map<string, IndutySales>;
+}
+export interface DongSales {
   quarter: string;
   total: number;
   name: string;
   top: { name: string; amt: number }[];
 }
-// 분기별 집계 결과를 워엄 람다 메모리에 캐시 (Next fetch 캐시가 원본을 캐시)
-let salesCache: { quarter: string; map: Map<string, DongSales> } | null = null;
+let salesCache: { quarter: string; map: Map<string, DongSalesEntry> } | null = null;
 
-export async function getDongSales(
-  dongName?: string,
-  admCode?: string
-): Promise<DongSales | null> {
-  // 최신 분기 확인
+async function buildSalesCache(): Promise<string | null> {
   const head = await fetchSeoul<SalesRow>("VwsmAdstrdSelngW", 1, 1);
   const quarter = head?.[0]?.STDR_YYQU_CD;
   if (!quarter) return null;
+  if (salesCache && salesCache.quarter === quarter) return quarter;
 
-  if (!salesCache || salesCache.quarter !== quarter) {
-    // 해당 분기 전체(약 17k행)를 1000행씩 병렬 수집
-    const pages: Promise<SalesRow[] | null>[] = [];
-    for (let s = 1; s <= 20001; s += 1000) {
-      pages.push(fetchSeoul<SalesRow>("VwsmAdstrdSelngW", s, s + 999, `/${quarter}`));
-    }
-    const results = await Promise.all(pages);
-    const map = new Map<string, DongSales>();
-    for (const rows of results) {
-      if (!rows) continue;
-      for (const r of rows) {
-        const amt = Number(r.THSMON_SELNG_AMT) || 0;
-        const cur =
-          map.get(r.ADSTRD_CD) ??
-          ({ quarter, total: 0, name: r.ADSTRD_CD_NM, top: [] } as DongSales);
-        cur.total += amt;
-        cur.top.push({ name: r.SVC_INDUTY_CD_NM, amt });
-        map.set(r.ADSTRD_CD, cur);
-      }
-    }
-    for (const v of map.values()) {
-      v.top.sort((a, b) => b.amt - a.amt);
-      v.top = v.top.slice(0, 3);
-    }
-    salesCache = { quarter, map };
+  const pages: Promise<SalesRow[] | null>[] = [];
+  for (let s = 1; s <= 20001; s += 1000) {
+    pages.push(fetchSeoul<SalesRow>("VwsmAdstrdSelngW", s, s + 999, `/${quarter}`));
   }
+  const results = await Promise.all(pages);
+  const map = new Map<string, DongSalesEntry>();
+  for (const rows of results) {
+    if (!rows) continue;
+    for (const r of rows) {
+      const amt = Number(r.THSMON_SELNG_AMT) || 0;
+      const e =
+        map.get(r.ADSTRD_CD) ??
+        ({ name: r.ADSTRD_CD_NM, total: 0, top: [], byInduty: new Map() } as DongSalesEntry);
+      e.total += amt;
+      e.top.push({ name: r.SVC_INDUTY_CD_NM, amt });
+      e.byInduty.set(r.SVC_INDUTY_CD_NM, {
+        amt,
+        cnt: Number(r.THSMON_SELNG_CO) || 0,
+        tmzon: [
+          Number(r.TMZON_00_06_SELNG_AMT) || 0,
+          Number(r.TMZON_06_11_SELNG_AMT) || 0,
+          Number(r.TMZON_11_14_SELNG_AMT) || 0,
+          Number(r.TMZON_14_17_SELNG_AMT) || 0,
+          Number(r.TMZON_17_21_SELNG_AMT) || 0,
+          Number(r.TMZON_21_24_SELNG_AMT) || 0,
+        ],
+        ml: Number(r.ML_SELNG_AMT) || 0,
+        fml: Number(r.FML_SELNG_AMT) || 0,
+        age: [
+          Number(r.AGRDE_10_SELNG_AMT) || 0,
+          Number(r.AGRDE_20_SELNG_AMT) || 0,
+          Number(r.AGRDE_30_SELNG_AMT) || 0,
+          Number(r.AGRDE_40_SELNG_AMT) || 0,
+          Number(r.AGRDE_50_SELNG_AMT) || 0,
+          Number(r.AGRDE_60_ABOVE_SELNG_AMT) || 0,
+        ],
+      });
+      map.set(r.ADSTRD_CD, e);
+    }
+  }
+  for (const v of map.values()) {
+    v.top.sort((a, b) => b.amt - a.amt);
+    v.top = v.top.slice(0, 3);
+  }
+  salesCache = { quarter, map };
+  return quarter;
+}
 
-  const code8 = admCode?.slice(0, 8);
+export async function getDongSales(dongName?: string, admCode?: string): Promise<DongSales | null> {
+  const quarter = await buildSalesCache();
+  if (!quarter || !salesCache) return null;
   for (const [code, v] of salesCache.map) {
-    if (
-      (dongName && v.name === dongName) ||
-      (code8 && (code === code8 || admCode?.startsWith(code)))
-    ) {
-      return v;
+    if (dongKeyMatch(code, v.name, dongName, admCode)) {
+      return { quarter, total: v.total, name: v.name, top: v.top };
     }
   }
   return null;
 }
 
-// ── 점포 개폐업(경쟁·동태) ─────────────────────────
+// ── 점포·개폐업(업종별) — 동 합계 + 업종별 상세 캐시 ──
 interface StorRow extends DongRow {
+  SVC_INDUTY_CD_NM: string;
   STOR_CO: number;
+  FRC_STOR_CO: number;
   CLSBIZ_RT: number;
   OPBIZ_RT: number;
+}
+interface IndutyStor {
+  stores: number;
+  frc: number;
+  clsW: number;
+  opW: number;
+}
+interface DongStorEntry {
+  name: string;
+  stores: number;
+  clsW: number;
+  opW: number;
+  byInduty: Map<string, IndutyStor>;
 }
 export interface DongDynamics {
   quarter: string;
   name: string;
   totalStores: number;
-  avgClsbiz: number; // 평균 폐업률(%)
-  avgOpbiz: number; // 평균 개업률(%)
+  avgClsbiz: number;
+  avgOpbiz: number;
 }
-let storCache:
-  | {
-      quarter: string;
-      map: Map<
-        string,
-        { name: string; stores: number; clsW: number; opW: number }
-      >;
+let storCache: { quarter: string; map: Map<string, DongStorEntry> } | null = null;
+
+async function buildStorCache(): Promise<string | null> {
+  const head = await fetchSeoul<StorRow>("VwsmAdstrdStorW", 1, 1);
+  const quarter = head?.[0]?.STDR_YYQU_CD;
+  if (!quarter) return null;
+  if (storCache && storCache.quarter === quarter) return quarter;
+
+  const pages: Promise<StorRow[] | null>[] = [];
+  for (let s = 1; s <= 40001; s += 1000) {
+    pages.push(fetchSeoul<StorRow>("VwsmAdstrdStorW", s, s + 999, `/${quarter}`));
+  }
+  const results = await Promise.all(pages);
+  const map = new Map<string, DongStorEntry>();
+  for (const rows of results) {
+    if (!rows) continue;
+    for (const r of rows) {
+      const stores = Number(r.STOR_CO) || 0;
+      const cls = Number(r.CLSBIZ_RT) || 0;
+      const op = Number(r.OPBIZ_RT) || 0;
+      const frc = Number(r.FRC_STOR_CO) || 0;
+      const e =
+        map.get(r.ADSTRD_CD) ??
+        ({ name: r.ADSTRD_CD_NM, stores: 0, clsW: 0, opW: 0, byInduty: new Map() } as DongStorEntry);
+      e.stores += stores;
+      e.clsW += cls * stores;
+      e.opW += op * stores;
+      e.byInduty.set(r.SVC_INDUTY_CD_NM, { stores, frc, clsW: cls * stores, opW: op * stores });
+      map.set(r.ADSTRD_CD, e);
     }
-  | null = null;
+  }
+  storCache = { quarter, map };
+  return quarter;
+}
 
 export async function getDongStoreDynamics(
   dongName?: string,
   admCode?: string
 ): Promise<DongDynamics | null> {
-  const head = await fetchSeoul<StorRow>("VwsmAdstrdStorW", 1, 1);
-  const quarter = head?.[0]?.STDR_YYQU_CD;
-  if (!quarter) return null;
-
-  if (!storCache || storCache.quarter !== quarter) {
-    const pages: Promise<StorRow[] | null>[] = [];
-    for (let s = 1; s <= 40001; s += 1000) {
-      pages.push(fetchSeoul<StorRow>("VwsmAdstrdStorW", s, s + 999, `/${quarter}`));
-    }
-    const results = await Promise.all(pages);
-    const map = new Map<
-      string,
-      { name: string; stores: number; clsW: number; opW: number }
-    >();
-    for (const rows of results) {
-      if (!rows) continue;
-      for (const r of rows) {
-        const stores = Number(r.STOR_CO) || 0;
-        const cur =
-          map.get(r.ADSTRD_CD) ??
-          { name: r.ADSTRD_CD_NM, stores: 0, clsW: 0, opW: 0 };
-        cur.stores += stores;
-        cur.clsW += (Number(r.CLSBIZ_RT) || 0) * stores;
-        cur.opW += (Number(r.OPBIZ_RT) || 0) * stores;
-        map.set(r.ADSTRD_CD, cur);
-      }
-    }
-    storCache = { quarter, map };
-  }
-
-  const code8 = admCode?.slice(0, 8);
+  const quarter = await buildStorCache();
+  if (!quarter || !storCache) return null;
   for (const [code, v] of storCache.map) {
-    if (
-      (dongName && v.name === dongName) ||
-      (code8 && (code === code8 || admCode?.startsWith(code)))
-    ) {
+    if (dongKeyMatch(code, v.name, dongName, admCode)) {
       return {
         quarter,
         name: v.name,
@@ -217,4 +271,115 @@ export async function getDongStoreDynamics(
     }
   }
   return null;
+}
+
+// ── 업종별 상세(매출·시간대·성연령·개폐업) ──
+const TIME_LABELS = ["새벽 0~6시", "오전 6~11시", "점심 11~14시", "오후 14~17시", "저녁 17~21시", "밤 21~24시"];
+const AGE_LABELS = ["10대", "20대", "30대", "40대", "50대", "60대 이상"];
+
+function argmaxLabel(arr: number[], labels: string[]): string | undefined {
+  let mi = -1;
+  let mv = -1;
+  arr.forEach((v, i) => {
+    if (v > mv) {
+      mv = v;
+      mi = i;
+    }
+  });
+  return mi >= 0 && mv > 0 ? labels[mi] : undefined;
+}
+
+export interface IndustrySeoulDetailRaw {
+  quarter: string;
+  salesAmt: number;
+  salesCnt: number;
+  peakTime?: string;
+  mainGender?: string;
+  mainAge?: string;
+  storeCount: number;
+  openRate: number;
+  closeRate: number;
+  franchiseRate: number;
+}
+
+export async function getIndustryDetail(
+  dongName: string | undefined,
+  admCode: string | undefined,
+  seoulSubs: string[]
+): Promise<IndustrySeoulDetailRaw | null> {
+  const [sq, tq] = await Promise.all([buildSalesCache(), buildStorCache()]);
+  const quarter = sq || tq;
+  if (!quarter) return null;
+
+  // 동 엔트리 찾기
+  let salesEntry: DongSalesEntry | undefined;
+  if (salesCache) {
+    for (const [code, v] of salesCache.map) {
+      if (dongKeyMatch(code, v.name, dongName, admCode)) {
+        salesEntry = v;
+        break;
+      }
+    }
+  }
+  let storEntry: DongStorEntry | undefined;
+  if (storCache) {
+    for (const [code, v] of storCache.map) {
+      if (dongKeyMatch(code, v.name, dongName, admCode)) {
+        storEntry = v;
+        break;
+      }
+    }
+  }
+  if (!salesEntry && !storEntry) return null;
+
+  const match = (name: string) => seoulSubs.some((s) => name.includes(s));
+
+  // 매출 집계
+  let amt = 0;
+  let cnt = 0;
+  const tmzon = [0, 0, 0, 0, 0, 0];
+  let ml = 0;
+  let fml = 0;
+  const age = [0, 0, 0, 0, 0, 0];
+  if (salesEntry) {
+    for (const [name, s] of salesEntry.byInduty) {
+      if (!match(name)) continue;
+      amt += s.amt;
+      cnt += s.cnt;
+      s.tmzon.forEach((v, i) => (tmzon[i] += v));
+      ml += s.ml;
+      fml += s.fml;
+      s.age.forEach((v, i) => (age[i] += v));
+    }
+  }
+
+  // 점포·개폐업 집계
+  let stores = 0;
+  let frc = 0;
+  let clsW = 0;
+  let opW = 0;
+  if (storEntry) {
+    for (const [name, s] of storEntry.byInduty) {
+      if (!match(name)) continue;
+      stores += s.stores;
+      frc += s.frc;
+      clsW += s.clsW;
+      opW += s.opW;
+    }
+  }
+
+  if (amt === 0 && stores === 0) return null;
+
+  return {
+    quarter,
+    salesAmt: amt,
+    salesCnt: cnt,
+    peakTime: argmaxLabel(tmzon, TIME_LABELS),
+    mainGender: ml === 0 && fml === 0 ? undefined : ml >= fml ? "남성" : "여성",
+    mainAge: argmaxLabel(age, AGE_LABELS),
+    storeCount: stores,
+    openRate: stores ? opW / stores : 0,
+    closeRate: stores ? clsW / stores : 0,
+    franchiseRate: stores ? (frc / stores) * 100 : 0,
+  };
 }

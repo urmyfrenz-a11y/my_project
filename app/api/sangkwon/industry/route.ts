@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { analyzeIndustry } from "@/lib/sangkwon/industry";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 // POST /api/sangkwon/industry  { lat, lng, industry }
 export async function POST(req: NextRequest) {

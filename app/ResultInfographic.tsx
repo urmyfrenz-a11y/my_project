@@ -1,6 +1,30 @@
 "use client";
 
 import type { AnalysisResult, FactorScore } from "@/lib/sangkwon/types";
+import { buildInsights } from "@/lib/sangkwon/insights";
+
+export function InsightList({
+  insights,
+  title = "핵심 인사이트",
+}: {
+  insights: { icon: string; text: string }[];
+  title?: string;
+}) {
+  if (!insights.length) return null;
+  return (
+    <div className="rounded-xl bg-indigo-50/60 border border-indigo-100 p-4">
+      <p className="text-xs font-bold text-indigo-700 mb-2">💡 {title}</p>
+      <ul className="space-y-1.5">
+        {insights.map((it, i) => (
+          <li key={i} className="flex gap-2 text-xs text-gray-700 leading-relaxed">
+            <span className="shrink-0">{it.icon}</span>
+            <span>{it.text}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 const GRADE_COLOR: Record<string, string> = {
   S: "#7c3aed",
@@ -135,6 +159,11 @@ export default function ResultInfographic({ result }: { result: AnalysisResult }
           <p className="text-sm text-gray-500">종합 상권 점수</p>
         </div>
         <RadarChart factors={result.factors} />
+      </div>
+
+      {/* 핵심 인사이트 3가지 */}
+      <div className="px-6 pb-2">
+        <InsightList insights={buildInsights(result)} />
       </div>
 
       {/* 팩터별 상세 */}

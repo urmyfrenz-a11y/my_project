@@ -55,7 +55,31 @@ export interface GeocodeResult {
 export interface Industry {
   id: string;
   label: string;
-  keyword: string; // 카카오 키워드 검색용
+  keyword: string; // 카카오 키워드 검색용(반경 점포수)
+  seoul: string[]; // 서울 상권분석 업종명 부분일치 키워드
+}
+
+/** 업종별 서울 실데이터 상세 */
+export interface IndustrySeoulDetail {
+  quarter: string;
+  /** 분기 추정매출(원) */
+  salesAmt: number;
+  /** 분기 매출 건수 */
+  salesCnt: number;
+  /** 주 매출 시간대 라벨 (예: "11~14시") */
+  peakTime?: string;
+  /** 주 고객 성별 ("남성"/"여성") */
+  mainGender?: string;
+  /** 주 고객 연령대 (예: "30대") */
+  mainAge?: string;
+  /** 동 내 해당 업종 점포 수 */
+  storeCount: number;
+  /** 개업률(%) */
+  openRate: number;
+  /** 폐업률(%) */
+  closeRate: number;
+  /** 프랜차이즈 비율(%) */
+  franchiseRate: number;
 }
 
 /** 업종별 심층 분석 결과 */
@@ -63,13 +87,17 @@ export interface IndustryResult {
   industryId: string;
   industryLabel: string;
   areaName: string;
-  /** 반경 내 동종 점포 수 (실데이터 실패 시 null) */
-  storeCount: number | null;
+  /** 반경 내 동종 점포 수 (카카오, 실패 시 null) */
+  nearbyStores: number | null;
   radius: number;
-  /** 경쟁강도 0~100 (높을수록 경쟁 치열) */
+  /** 경쟁강도 0~100 */
   competition: number;
-  /** 기회지수 0~100 (경쟁 대비 종합상권 매력, 높을수록 유리) */
+  /** 기회지수 0~100 */
   opportunity: number;
+  /** 서울 업종 실데이터 (없으면 null) */
+  seoul: IndustrySeoulDetail | null;
   source: "live" | "demo";
+  /** 핵심 인사이트 3가지 */
+  insights: { icon: string; text: string }[];
   note: string;
 }
