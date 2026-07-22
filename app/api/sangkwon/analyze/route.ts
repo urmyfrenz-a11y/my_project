@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { analyzeLocation } from "@/lib/sangkwon/analyze";
 
 export const runtime = "nodejs";
+export const maxDuration = 30; // 서울 매출 최초 집계 여유
 
 // POST /api/sangkwon/analyze  { lat, lng, address? }
 export async function POST(req: NextRequest) {
