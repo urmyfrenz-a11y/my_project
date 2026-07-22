@@ -15,6 +15,7 @@ import {
   getConsumption,
   seoulConfigured,
 } from "./seoul";
+import { getRentVacancy, roneConfigured } from "./rone";
 
 /** 반경 기준 팩터의 분석 반경(m) */
 export const RADIUS = 500;
@@ -58,7 +59,9 @@ function notSeoulResult(center: LatLng, areaName: string, sido?: string): Analys
  *  - 유동인구(2)   : 서울 생활인구(행정동)
  *  - 배후수요(3)   : 서울 상주인구·가구·아파트세대(행정동)
  *  - 매출(5)       : 서울 추정매출(행정동 업종 합계)
- *  - 소비력(4)·경쟁(6)·임대료(7) : 데모 (서비스명/키 미확보)
+ *  - 소비력(4)     : 서울 소득소비(행정동)
+ *  - 경쟁(6)       : 서울 점포 개폐업률(행정동)
+ *  - 임대료(7)     : 한국부동산원 R-ONE 상업용부동산 임대동향(서울 중대형상가)
  */
 export async function analyzeLocation(
   center: LatLng,
@@ -78,7 +81,7 @@ export async function analyzeLocation(
     if (f) Object.assign(f, p);
   };
 
-  const [poi, subway, stores, living, resident, sales, dynamics, cnsmp] = await Promise.all([
+  const [poi, subway, stores, living, resident, sales, dynamics, cnsmp, rent] = await Promise.all([
     kakaoConfigured() ? countAttractionPois(center, RADIUS) : Promise.resolve(null),
     kakaoConfigured() ? nearestSubway(center, SUBWAY_RADIUS) : Promise.resolve(null),
     datagokrConfigured() ? storesInRadius(center, RADIUS) : Promise.resolve(null),
@@ -87,6 +90,7 @@ export async function analyzeLocation(
     seoulConfigured() ? withTimeout(getDongSales(dong, admCode), 9000) : Promise.resolve(null),
     seoulConfigured() ? withTimeout(getDongStoreDynamics(dong, admCode), 12000) : Promise.resolve(null),
     seoulConfigured() ? withTimeout(getConsumption(dong, admCode), 8000) : Promise.resolve(null),
+    roneConfigured() ? withTimeout(getRentVacancy(), 12000) : Promise.resolve(null),
   ]);
 
   // 9. 집객시설
@@ -182,6 +186,28 @@ export async function analyzeLocation(
       detail: `${cnsmp.name} 분기 소비지출 약 ${Math.round(cnsmp.total / 1e8).toLocaleString()}억원${
         cnsmp.topCategory ? ` · 최다 지출 ${cnsmp.topCategory}` : ""
       } (${cnsmp.quarter}, 서울 실데이터)`,
+    });
+  }
+
+  // 7. 임대료·권리금 (R-ONE 상업용부동산 임대동향 — 서울 중대형상가, 역방향: 낮을수록 좋음)
+  if (rent && (rent.rent != null || rent.vacancy != null)) {
+    const parts: string[] = [];
+    if (rent.rent != null) {
+      parts.push(`임대료 ${rent.rent.toLocaleString()}${rent.rentUnit || "원/㎡"}`);
+    }
+    if (rent.vacancy != null) parts.push(`공실률 ${rent.vacancy}%`);
+    // 임대료(원/㎡)가 낮을수록 유리 → 역방향 점수. 서울 중대형상가 대략 3만~10만원/㎡ 밴드.
+    let score = 55;
+    if (rent.rent != null) {
+      const r = rent.rent;
+      score = 90 - ((r - 30000) / 70000) * 60; // 3만→90, 10만→30
+    }
+    // 공실률이 높으면 상권 활력 측면 감점(소폭)
+    if (rent.vacancy != null) score -= Math.min(15, rent.vacancy * 0.8);
+    patch("rent", {
+      source: "live",
+      score: clamp(score),
+      detail: `${rent.region} 중대형상가 ${parts.join(" · ")} (${rent.quarter}, 한국부동산원 R-ONE 실데이터)`,
     });
   }
 

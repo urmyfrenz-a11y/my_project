@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { debugRent } from "@/lib/sangkwon/rone";
 
 // 임시 진단용. 확인 후 삭제.
 export const runtime = "nodejs";
@@ -26,6 +27,15 @@ export async function GET(req: NextRequest) {
   // R_ONE_KEY 존재 여부 확인
   if (sp.get("check") === "1") {
     return NextResponse.json({ hasRoneKey: !!process.env.R_ONE_KEY });
+  }
+
+  // 임대료·공실률 런타임 탐색 결과 확인 (rone.ts 실제 경로 그대로 실행)
+  if (sp.get("rent_test") != null) {
+    try {
+      return NextResponse.json(await debugRent());
+    } catch (e) {
+      return NextResponse.json({ error: String(e) }, { status: 500 });
+    }
   }
 
   // R-ONE 통계표 목록 검색: ?rone_search=임대 [&stat=S237220284]
