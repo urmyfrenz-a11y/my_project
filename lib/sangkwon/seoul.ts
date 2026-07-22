@@ -143,3 +143,78 @@ export async function getDongSales(
   }
   return null;
 }
+
+// ── 점포 개폐업(경쟁·동태) ─────────────────────────
+interface StorRow extends DongRow {
+  STOR_CO: number;
+  CLSBIZ_RT: number;
+  OPBIZ_RT: number;
+}
+export interface DongDynamics {
+  quarter: string;
+  name: string;
+  totalStores: number;
+  avgClsbiz: number; // 평균 폐업률(%)
+  avgOpbiz: number; // 평균 개업률(%)
+}
+let storCache:
+  | {
+      quarter: string;
+      map: Map<
+        string,
+        { name: string; stores: number; clsW: number; opW: number }
+      >;
+    }
+  | null = null;
+
+export async function getDongStoreDynamics(
+  dongName?: string,
+  admCode?: string
+): Promise<DongDynamics | null> {
+  const head = await fetchSeoul<StorRow>("VwsmAdstrdStorW", 1, 1);
+  const quarter = head?.[0]?.STDR_YYQU_CD;
+  if (!quarter) return null;
+
+  if (!storCache || storCache.quarter !== quarter) {
+    const pages: Promise<StorRow[] | null>[] = [];
+    for (let s = 1; s <= 40001; s += 1000) {
+      pages.push(fetchSeoul<StorRow>("VwsmAdstrdStorW", s, s + 999, `/${quarter}`));
+    }
+    const results = await Promise.all(pages);
+    const map = new Map<
+      string,
+      { name: string; stores: number; clsW: number; opW: number }
+    >();
+    for (const rows of results) {
+      if (!rows) continue;
+      for (const r of rows) {
+        const stores = Number(r.STOR_CO) || 0;
+        const cur =
+          map.get(r.ADSTRD_CD) ??
+          { name: r.ADSTRD_CD_NM, stores: 0, clsW: 0, opW: 0 };
+        cur.stores += stores;
+        cur.clsW += (Number(r.CLSBIZ_RT) || 0) * stores;
+        cur.opW += (Number(r.OPBIZ_RT) || 0) * stores;
+        map.set(r.ADSTRD_CD, cur);
+      }
+    }
+    storCache = { quarter, map };
+  }
+
+  const code8 = admCode?.slice(0, 8);
+  for (const [code, v] of storCache.map) {
+    if (
+      (dongName && v.name === dongName) ||
+      (code8 && (code === code8 || admCode?.startsWith(code)))
+    ) {
+      return {
+        quarter,
+        name: v.name,
+        totalStores: v.stores,
+        avgClsbiz: v.stores ? v.clsW / v.stores : 0,
+        avgOpbiz: v.stores ? v.opW / v.stores : 0,
+      };
+    }
+  }
+  return null;
+}

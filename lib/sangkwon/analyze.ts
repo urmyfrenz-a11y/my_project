@@ -11,6 +11,7 @@ import {
   getLivingPopulation,
   getResidentPopulation,
   getDongSales,
+  getDongStoreDynamics,
   seoulConfigured,
 } from "./seoul";
 
@@ -76,13 +77,14 @@ export async function analyzeLocation(
     if (f) Object.assign(f, p);
   };
 
-  const [poi, subway, stores, living, resident, sales] = await Promise.all([
+  const [poi, subway, stores, living, resident, sales, dynamics] = await Promise.all([
     kakaoConfigured() ? countAttractionPois(center, RADIUS) : Promise.resolve(null),
     kakaoConfigured() ? nearestSubway(center, SUBWAY_RADIUS) : Promise.resolve(null),
     datagokrConfigured() ? storesInRadius(center, RADIUS) : Promise.resolve(null),
     seoulConfigured() ? withTimeout(getLivingPopulation(dong, admCode), 6000) : Promise.resolve(null),
     seoulConfigured() ? withTimeout(getResidentPopulation(dong, admCode), 6000) : Promise.resolve(null),
-    seoulConfigured() ? withTimeout(getDongSales(dong, admCode), 8000) : Promise.resolve(null),
+    seoulConfigured() ? withTimeout(getDongSales(dong, admCode), 9000) : Promise.resolve(null),
+    seoulConfigured() ? withTimeout(getDongStoreDynamics(dong, admCode), 12000) : Promise.resolve(null),
   ]);
 
   // 9. 집객시설
@@ -158,6 +160,15 @@ export async function analyzeLocation(
       detail: `${sales.name} 분기 추정매출 약 ${Math.round(eok).toLocaleString()}억원${
         topText ? ` · 상위 업종 ${topText}` : ""
       } (${sales.quarter}, 서울 실데이터)`,
+    });
+  }
+
+  // 6. 경쟁·동태 (서울 점포 개폐업률)
+  if (dynamics && dynamics.totalStores > 0) {
+    patch("competition", {
+      source: "live",
+      score: clamp(95 - dynamics.avgClsbiz * 3),
+      detail: `${dynamics.name} 개업률 ${dynamics.avgOpbiz.toFixed(1)}% / 폐업률 ${dynamics.avgClsbiz.toFixed(1)}% · 점포 ${dynamics.totalStores.toLocaleString()}개 (${dynamics.quarter}, 서울 실데이터)`,
     });
   }
 
