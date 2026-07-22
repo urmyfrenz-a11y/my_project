@@ -64,8 +64,10 @@ export async function geocode(query: string): Promise<GeocodeResult | null> {
   return null;
 }
 
-/** 좌표 → 행정구역 명칭 (예: "중구 명동") */
-export async function reverseRegion(center: LatLng): Promise<string | null> {
+/** 좌표 → 행정구역 명칭 (예: "중구 명동") + 행정동 코드 */
+export async function reverseRegion(
+  center: LatLng
+): Promise<{ name: string; admCode?: string } | null> {
   const headers = authHeader();
   if (!headers) return null;
   try {
@@ -74,35 +76,92 @@ export async function reverseRegion(center: LatLng): Promise<string | null> {
     url.searchParams.set("y", String(center.lat));
     const res = await fetch(url, { headers, cache: "no-store" });
     if (!res.ok) return null;
-    const data = await res.json();
+    const data = (await res.json()) as {
+      documents?: Array<{
+        region_type: string;
+        region_2depth_name?: string;
+        region_3depth_name?: string;
+        code?: string;
+      }>;
+    };
     const doc =
-      data.documents?.find((d: { region_type: string }) => d.region_type === "H") ??
-      data.documents?.[0];
+      data.documents?.find((d) => d.region_type === "H") ?? data.documents?.[0];
     if (!doc) return null;
-    return [doc.region_2depth_name, doc.region_3depth_name].filter(Boolean).join(" ");
+    const name = [doc.region_2depth_name, doc.region_3depth_name]
+      .filter(Boolean)
+      .join(" ");
+    return { name, admCode: doc.code };
   } catch {
     return null;
   }
 }
 
-/** 반경 내 집객시설 POI 개수 (9번 팩터 보완). category_group_code 예: FD6 음식점, CE7 카페 등 */
-export async function countNearbyPois(
+/** 특정 카테고리의 반경 내 총 개수 (Kakao category_group_code 기준) */
+async function categoryTotal(
   center: LatLng,
-  radius = 400
+  code: string,
+  radius: number
 ): Promise<number | null> {
   const headers = authHeader();
   if (!headers) return null;
   try {
     const url = new URL(`${KAKAO_BASE}/v2/local/search/category.json`);
-    url.searchParams.set("category_group_code", "FD6");
+    url.searchParams.set("category_group_code", code);
     url.searchParams.set("x", String(center.lng));
     url.searchParams.set("y", String(center.lat));
     url.searchParams.set("radius", String(radius));
-    url.searchParams.set("size", "15");
+    url.searchParams.set("size", "1");
     const res = await fetch(url, { headers, cache: "no-store" });
     if (!res.ok) return null;
-    const data = await res.json();
+    const data = (await res.json()) as { meta?: { total_count?: number } };
     return data.meta?.total_count ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** 집객시설(9번): 반경 내 문화시설(CT1)+관광명소(AT4)+대형마트(MT1) 합계 */
+export async function countAttractionPois(
+  center: LatLng,
+  radius = 500
+): Promise<number | null> {
+  const [culture, tour, mart] = await Promise.all([
+    categoryTotal(center, "CT1", radius),
+    categoryTotal(center, "AT4", radius),
+    categoryTotal(center, "MT1", radius),
+  ]);
+  if (culture == null && tour == null && mart == null) return null;
+  return (culture ?? 0) + (tour ?? 0) + (mart ?? 0);
+}
+
+/** 지하철 접근성(8번): 가장 가까운 지하철역 거리 + 반경 내 개수 */
+export async function nearestSubway(
+  center: LatLng,
+  radius = 800
+): Promise<{ count: number; nearestName?: string; nearestDist?: number } | null> {
+  const headers = authHeader();
+  if (!headers) return null;
+  try {
+    const url = new URL(`${KAKAO_BASE}/v2/local/search/category.json`);
+    url.searchParams.set("category_group_code", "SW8");
+    url.searchParams.set("x", String(center.lng));
+    url.searchParams.set("y", String(center.lat));
+    url.searchParams.set("radius", String(radius));
+    url.searchParams.set("sort", "distance");
+    url.searchParams.set("size", "5");
+    const res = await fetch(url, { headers, cache: "no-store" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      meta?: { total_count?: number };
+      documents?: Array<{ place_name?: string; distance?: string }>;
+    };
+    const count = data.meta?.total_count ?? 0;
+    const first = data.documents?.[0];
+    return {
+      count,
+      nearestName: first?.place_name,
+      nearestDist: first?.distance ? Number(first.distance) : undefined,
+    };
   } catch {
     return null;
   }
