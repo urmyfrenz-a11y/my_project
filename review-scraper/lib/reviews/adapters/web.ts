@@ -161,7 +161,10 @@ export async function webSearchPlaces(): Promise<PlaceSearchResult[]> {
   return [];
 }
 
-export async function webCollect(query: string): Promise<CollectResult> {
+export async function webCollect(
+  query: string,
+  _place?: PlaceSearchResult,
+): Promise<CollectResult> {
   const engines = [bing, duck];
   let reviews: UnifiedReview[] = [];
   for (const engine of engines) {

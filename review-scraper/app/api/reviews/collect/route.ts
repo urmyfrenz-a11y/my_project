@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { collectReviews, type Platform } from "@/lib/reviews";
+import {
+  collectReviews,
+  type Platform,
+  type PlaceSearchResult,
+} from "@/lib/reviews";
 
 // Playwright (naver) needs the Node.js runtime, not edge.
 export const runtime = "nodejs";
@@ -8,7 +12,11 @@ export const maxDuration = 60;
 const ALL: Platform[] = ["web", "kakao", "naver"];
 
 export async function POST(req: Request) {
-  let body: { query?: string; platforms?: string[] };
+  let body: {
+    query?: string;
+    platforms?: string[];
+    place?: PlaceSearchResult;
+  };
   try {
     body = await req.json();
   } catch {
@@ -26,6 +34,11 @@ export async function POST(req: Request) {
       : ALL
   ).filter((p): p is Platform => ALL.includes(p as Platform));
 
-  const results = await collectReviews(query, platforms);
+  // The client's place-picker sends the exact place the user chose so we
+  // collect for that place instead of a fuzzy "best match".
+  const place =
+    body.place && body.place.placeId ? body.place : undefined;
+
+  const results = await collectReviews(query, platforms, place);
   return NextResponse.json({ query, results });
 }

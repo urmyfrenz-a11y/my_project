@@ -18,7 +18,10 @@ interface WorkerResponse {
   error?: string;
 }
 
-export async function naverCollect(query: string): Promise<CollectResult> {
+export async function naverCollect(
+  query: string,
+  _place?: PlaceSearchResult,
+): Promise<CollectResult> {
   const base = config.naver.workerUrl.replace(/\/$/, "");
   if (!base) {
     return {

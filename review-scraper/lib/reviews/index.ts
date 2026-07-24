@@ -5,7 +5,10 @@ import type { CollectResult, Platform, PlaceSearchResult } from "./types";
 
 export * from "./types";
 
-const COLLECTORS: Record<Platform, (q: string) => Promise<CollectResult>> = {
+const COLLECTORS: Record<
+  Platform,
+  (q: string, place?: PlaceSearchResult) => Promise<CollectResult>
+> = {
   web: webCollect,
   kakao: kakaoCollect,
   naver: naverCollect,
@@ -15,8 +18,9 @@ const COLLECTORS: Record<Platform, (q: string) => Promise<CollectResult>> = {
 export async function collectReviews(
   query: string,
   platforms: Platform[],
+  place?: PlaceSearchResult,
 ): Promise<CollectResult[]> {
-  const jobs = platforms.map((p) => COLLECTORS[p](query));
+  const jobs = platforms.map((p) => COLLECTORS[p](query, place));
   const settled = await Promise.allSettled(jobs);
   return settled.map((s, i) =>
     s.status === "fulfilled"

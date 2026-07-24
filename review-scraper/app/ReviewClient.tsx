@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import type {
   Platform,
   UnifiedReview,
   CollectResult,
+  PlaceSearchResult,
 } from "@/lib/reviews/types";
 
 const ALL_PLATFORMS: Platform[] = ["kakao", "web", "naver"];
@@ -81,10 +82,10 @@ function txtForSource(r: CollectResult): string {
   return lines.join("\n") + "\n" + body + "\n";
 }
 
-function txtCombined(query: string, results: CollectResult[]): string {
+function txtCombined(title: string, results: CollectResult[]): string {
   const usable = results.filter((r) => r.ok && r.reviews.length > 0);
   const header = [
-    `장소 리뷰 수집 — "${query}"`,
+    `장소 리뷰 수집 — ${title}`,
     `수집 소스: ${usable.map((r) => META[r.platform].label).join(", ")}`,
     `총 ${usable.reduce((s, r) => s + r.reviews.length, 0)}개 리뷰`,
     "#".repeat(48),
@@ -112,21 +113,21 @@ function safeName(s: string): string {
 
 /* ── component ────────────────────────────────────────── */
 
+type Phase = "idle" | "searching" | "picking" | "notfound" | "collecting" | "done";
+
 export default function ReviewClient() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Platform[]>(["kakao"]);
-  const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [candidates, setCandidates] = useState<PlaceSearchResult[]>([]);
+  const [chosen, setChosen] = useState<PlaceSearchResult | null>(null);
   const [results, setResults] = useState<CollectResult[] | null>(null);
-  const [submitted, setSubmitted] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const totalReviews = useMemo(
-    () =>
-      results
-        ? results.reduce((s, r) => s + (r.ok ? r.reviews.length : 0), 0)
-        : 0,
-    [results],
-  );
+  const busy = phase === "searching" || phase === "collecting";
+  const totalReviews = results
+    ? results.reduce((s, r) => s + (r.ok ? r.reviews.length : 0), 0)
+    : 0;
 
   function togglePlatform(p: Platform) {
     setSelected((prev) =>
@@ -134,31 +135,61 @@ export default function ReviewClient() {
     );
   }
 
-  async function run(e: React.FormEvent) {
+  // Step 1 — resolve the query to real place candidates (Kakao).
+  async function findPlaces(e: React.FormEvent) {
     e.preventDefault();
-    if (!query.trim() || selected.length === 0) return;
-    setLoading(true);
+    if (!query.trim() || selected.length === 0 || busy) return;
+    setPhase("searching");
     setError(null);
     setResults(null);
-    const q = query.trim();
+    setChosen(null);
+    setCandidates([]);
+    try {
+      const res = await fetch(
+        `/api/reviews/search?q=${encodeURIComponent(query.trim())}`,
+      );
+      if (!res.ok) throw new Error(`요청 실패 (${res.status})`);
+      const data = (await res.json()) as { places: PlaceSearchResult[] };
+      const places = data.places ?? [];
+      if (places.length === 0) {
+        setPhase("notfound");
+        return;
+      }
+      setCandidates(places);
+      setPhase("picking");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setPhase("idle");
+    }
+  }
+
+  // Step 2 — collect reviews for the exact place the user picked.
+  async function collectFor(place: PlaceSearchResult) {
+    setChosen(place);
+    setPhase("collecting");
+    setError(null);
+    setResults(null);
     try {
       const res = await fetch("/api/reviews/collect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q, platforms: selected }),
+        body: JSON.stringify({
+          query: place.name,
+          platforms: selected,
+          place,
+        }),
       });
       if (!res.ok) throw new Error(`요청 실패 (${res.status})`);
       const data = (await res.json()) as { results: CollectResult[] };
       setResults(data.results);
-      setSubmitted(q);
+      setPhase("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
+      setPhase("picking");
     }
   }
 
-  const canSubmit = query.trim().length > 0 && selected.length > 0 && !loading;
+  const canSubmit = query.trim().length > 0 && selected.length > 0 && !busy;
   const downloadable = (results ?? []).filter(
     (r) => r.ok && r.reviews.length > 0,
   );
@@ -166,15 +197,23 @@ export default function ReviewClient() {
   return (
     <div className="w-full space-y-8">
       {/* Search card */}
-      <form onSubmit={run}>
+      <form onSubmit={findPlaces}>
         <div className="rounded-2xl border border-line bg-card p-2.5 shadow-sm shadow-black/[0.03] ring-1 ring-black/[0.02]">
           <div className="flex flex-col gap-2 sm:flex-row">
             <div className="relative flex-1">
               <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted" />
               <input
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="장소명을 입력하세요 (예: 스타벅스 강남점)"
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  if (phase !== "idle" && phase !== "searching") {
+                    setPhase("idle");
+                    setResults(null);
+                    setCandidates([]);
+                    setChosen(null);
+                  }
+                }}
+                placeholder="장소명을 입력하세요 (예: 스타벅스 뉴코아강남점)"
                 className="w-full rounded-xl bg-transparent py-3 pl-11 pr-3 text-[15px] outline-none placeholder:text-muted"
               />
             </div>
@@ -183,12 +222,12 @@ export default function ReviewClient() {
               disabled={!canSubmit}
               className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
             >
-              {loading ? (
+              {phase === "searching" ? (
                 <>
-                  <Spinner /> 수집 중
+                  <Spinner /> 찾는 중
                 </>
               ) : (
-                "리뷰 수집"
+                "장소 찾기"
               )}
             </button>
           </div>
@@ -225,19 +264,42 @@ export default function ReviewClient() {
         </div>
       )}
 
-      {loading && (
-        <div className="space-y-4">
-          {selected.map((p) => (
-            <SkeletonCard key={p} />
-          ))}
+      {phase === "idle" && !error && <EmptyState />}
+
+      {phase === "searching" && <SkeletonList lines={2} />}
+
+      {phase === "notfound" && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-6 text-center dark:border-amber-900/50 dark:bg-amber-950/30">
+          <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+            ‘{query.trim()}’ 와(과) 일치하는 장소를 찾지 못했어요.
+          </p>
+          <p className="mt-1 text-xs text-amber-700/80 dark:text-amber-300/70">
+            지점명까지 정확히 입력해 보세요 (예: “스타벅스 뉴코아강남점”).
+          </p>
         </div>
       )}
 
-      {!loading && !results && !error && <EmptyState />}
+      {/* Step: pick the exact place */}
+      {(phase === "picking" || (phase === "done" && chosen)) && (
+        <PlacePicker
+          candidates={candidates}
+          chosen={chosen}
+          collapsed={phase === "done"}
+          onPick={collectFor}
+          onReselect={() => {
+            setResults(null);
+            setChosen(null);
+            setPhase("picking");
+          }}
+        />
+      )}
 
-      {results && (
+      {phase === "collecting" && (
+        <SkeletonList lines={selected.length} />
+      )}
+
+      {phase === "done" && results && (
         <div className="space-y-4">
-          {/* combined download banner */}
           {downloadable.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50/80 to-card px-5 py-4 shadow-sm dark:border-indigo-900/50 dark:from-indigo-950/30">
               <div className="min-w-0 flex-1">
@@ -254,8 +316,8 @@ export default function ReviewClient() {
                   type="button"
                   onClick={() =>
                     download(
-                      `${safeName(submitted)}_전체리뷰.txt`,
-                      txtCombined(submitted, results),
+                      `${safeName(chosen?.name ?? query)}_전체리뷰.txt`,
+                      txtCombined(chosen?.name ?? query, results),
                     )
                   }
                   className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:brightness-110"
@@ -268,10 +330,84 @@ export default function ReviewClient() {
           )}
 
           {results.map((r) => (
-            <PlatformCard key={r.platform} result={r} query={submitted} />
+            <PlatformCard
+              key={r.platform}
+              result={r}
+              query={chosen?.name ?? query}
+            />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function PlacePicker({
+  candidates,
+  chosen,
+  collapsed,
+  onPick,
+  onReselect,
+}: {
+  candidates: PlaceSearchResult[];
+  chosen: PlaceSearchResult | null;
+  collapsed: boolean;
+  onPick: (p: PlaceSearchResult) => void;
+  onReselect: () => void;
+}) {
+  if (collapsed && chosen) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-line bg-card px-4 py-3">
+        <span className="text-xs text-muted">수집 대상</span>
+        <span className="text-sm font-semibold">{chosen.name}</span>
+        {chosen.address && (
+          <span className="truncate text-xs text-muted">{chosen.address}</span>
+        )}
+        {candidates.length > 1 && (
+          <button
+            type="button"
+            onClick={onReselect}
+            className="ml-auto text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+          >
+            다른 장소 선택
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2.5">
+      <p className="px-1 text-sm">
+        <b>이 장소가 맞나요?</b>{" "}
+        <span className="text-muted">정확한 곳을 선택하면 리뷰를 모읍니다.</span>
+      </p>
+      <ul className="space-y-2">
+        {candidates.map((c) => (
+          <li key={c.placeId}>
+            <button
+              type="button"
+              onClick={() => onPick(c)}
+              className="group flex w-full items-center gap-3 rounded-xl border border-line bg-card px-4 py-3 text-left shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/40 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/20"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
+                <PinIcon />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">
+                  {c.name}
+                </span>
+                <span className="block truncate text-xs text-muted">
+                  {[c.category, c.address].filter(Boolean).join(" · ")}
+                </span>
+              </span>
+              <span className="shrink-0 text-muted transition group-hover:translate-x-0.5 group-hover:text-indigo-500">
+                <ChevronIcon />
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -343,7 +479,7 @@ function PlatformCard({
               </div>
             ) : (
               <div className="text-sm text-muted">
-                <b className="text-foreground">{reviews.length}</b>개 리뷰 수집
+                <b className="text-foreground">{reviews.length}</b>개 수집
                 <span className="ml-2 text-xs">(별점 없는 소스)</span>
               </div>
             )}
@@ -485,18 +621,25 @@ function StarRow({ value, size = 15 }: { value: number; size?: number }) {
   );
 }
 
-function SkeletonCard() {
+function SkeletonList({ lines }: { lines: number }) {
   return (
-    <div className="animate-pulse overflow-hidden rounded-2xl border border-line bg-card">
-      <div className="flex items-center gap-2.5 border-b border-line px-5 py-3.5">
-        <span className="h-2.5 w-2.5 rounded-full bg-neutral-200 dark:bg-neutral-700" />
-        <span className="h-3 w-24 rounded bg-neutral-200 dark:bg-neutral-700" />
-      </div>
-      <div className="space-y-3 px-5 py-5">
-        <div className="h-8 w-28 rounded bg-neutral-200 dark:bg-neutral-800" />
-        <div className="h-3 w-full rounded bg-neutral-100 dark:bg-neutral-800" />
-        <div className="h-3 w-4/5 rounded bg-neutral-100 dark:bg-neutral-800" />
-      </div>
+    <div className="space-y-4">
+      {Array.from({ length: Math.max(1, lines) }).map((_, i) => (
+        <div
+          key={i}
+          className="animate-pulse overflow-hidden rounded-2xl border border-line bg-card"
+        >
+          <div className="flex items-center gap-2.5 border-b border-line px-5 py-3.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-neutral-200 dark:bg-neutral-700" />
+            <span className="h-3 w-24 rounded bg-neutral-200 dark:bg-neutral-700" />
+          </div>
+          <div className="space-y-3 px-5 py-5">
+            <div className="h-8 w-28 rounded bg-neutral-200 dark:bg-neutral-800" />
+            <div className="h-3 w-full rounded bg-neutral-100 dark:bg-neutral-800" />
+            <div className="h-3 w-4/5 rounded bg-neutral-100 dark:bg-neutral-800" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -509,8 +652,8 @@ function EmptyState() {
       </div>
       <p className="text-sm font-medium">장소를 검색해 리뷰를 모아보세요</p>
       <p className="mt-1 text-xs text-muted">
-        가게 이름을 입력하고 수집 대상을 골라 “리뷰 수집”을 누르면, 요약과 함께
-        전체 리뷰를 .txt 로 내려받을 수 있습니다.
+        가게 이름을 입력하면 일치하는 장소 후보를 보여드려요. 정확한 곳을 고르면
+        요약과 함께 전체 리뷰를 .txt 로 내려받을 수 있습니다.
       </p>
     </div>
   );
@@ -527,6 +670,34 @@ function SearchIcon({ className }: { className?: string }) {
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
+      <path
+        d="M12 2C8.7 2 6 4.7 6 8c0 4.2 6 12 6 12s6-7.8 6-12c0-3.3-2.7-6-6-6z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="8" r="2.2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ChevronIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
+      <path
+        d="m9 6 6 6-6 6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );

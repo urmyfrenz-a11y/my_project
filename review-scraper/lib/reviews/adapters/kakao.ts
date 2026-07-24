@@ -219,7 +219,10 @@ async function kakaoGetReviews(placeId: string): Promise<UnifiedReview[]> {
   return kakaoGetReviewsPanel(placeId);
 }
 
-export async function kakaoCollect(query: string): Promise<CollectResult> {
+export async function kakaoCollect(
+  query: string,
+  chosen?: PlaceSearchResult,
+): Promise<CollectResult> {
   if (!config.kakao.restKey) {
     return {
       platform: "kakao",
@@ -231,18 +234,24 @@ export async function kakaoCollect(query: string): Promise<CollectResult> {
     };
   }
   try {
-    const candidates = await kakaoSearchPlaces(query);
-    if (candidates.length === 0) {
-      return {
-        platform: "kakao",
-        place: null,
-        reviews: [],
-        ok: false,
-        error: "검색 결과가 없습니다.",
-        errorCode: "NO_MATCH",
-      };
+    // With the place-picker flow the caller passes the exact place the user
+    // chose, so we never silently substitute a fuzzy match. Only fall back to
+    // "best match" when no place was chosen (e.g. direct API calls).
+    let place = chosen?.placeId ? chosen : null;
+    if (!place) {
+      const candidates = await kakaoSearchPlaces(query);
+      if (candidates.length === 0) {
+        return {
+          platform: "kakao",
+          place: null,
+          reviews: [],
+          ok: false,
+          error: "검색 결과가 없습니다.",
+          errorCode: "NO_MATCH",
+        };
+      }
+      place = candidates[0];
     }
-    const place = candidates[0];
     const reviews = await kakaoGetReviews(place.placeId);
     return {
       platform: "kakao",
