@@ -85,7 +85,13 @@ async function resolvePlaceId(query) {
   return data?.documents?.[0]?.id ?? null;
 }
 
+// Give the scrape a hard budget so we return partial results before the
+// caller (Vercel, 55s) gives up — free Render CPU is slow.
+const TIME_BUDGET_MS = Number(process.env.KAKAO_TIME_BUDGET_MS || "42000");
+
 async function scrapeKakao(placeId) {
+  const start = Date.now();
+  const elapsed = () => Date.now() - start;
   const browser = await chromium.launch({
     headless: true,
     args: [
@@ -97,6 +103,9 @@ async function scrapeKakao(placeId) {
       "--disable-background-networking",
     ],
   });
+  const apiLog = [];
+  let pageUrl = "";
+  let pageTitle = "";
   try {
     const ctx = await browser.newContext({
       userAgent:
@@ -109,12 +118,24 @@ async function scrapeKakao(placeId) {
     const page = await ctx.newPage();
 
     const harvested = [];
+    // Log EVERY place-api response so we can see which endpoint carries
+    // reviews and whether pagination actually fires as we scroll.
     page.on("response", async (resp) => {
       try {
-        if (!resp.url().includes(API_HOST)) return;
+        const url = resp.url();
+        if (!url.includes(API_HOST)) return;
+        const status = resp.status();
         const ct = resp.headers()["content-type"] ?? "";
-        if (!ct.includes("json")) return;
-        harvest(await resp.json(), harvested);
+        if (!ct.includes("json")) {
+          apiLog.push({ status, n: 0, url: url.slice(0, 180) });
+          return;
+        }
+        const json = await resp.json();
+        const before = harvested.length;
+        harvest(json, harvested);
+        const n = harvested.length - before;
+        apiLog.push({ status, n, url: url.slice(0, 180) });
+        console.log(`[api] ${status} +${n} (total ${harvested.length}) ${url.slice(0, 160)}`);
       } catch {
         /* ignore non-JSON / aborted */
       }
@@ -127,9 +148,12 @@ async function scrapeKakao(placeId) {
       timeout: 25000,
     });
     await page.waitForTimeout(2500);
+    pageUrl = page.url();
+    pageTitle = (await page.title().catch(() => "")) || "";
+    console.log(`[nav] placeId=${placeId} url=${pageUrl} title="${pageTitle}" harvested=${harvested.length}`);
 
     // Try to focus the review tab so the review list mounts.
-    for (const name of [/후기/, /리뷰/]) {
+    for (const name of [/후기/, /리뷰/, /블로그/]) {
       await page
         .getByRole("tab", { name })
         .first()
@@ -143,12 +167,20 @@ async function scrapeKakao(placeId) {
     }
     await page.waitForTimeout(1500);
 
-    // Scroll + "더보기" until the harvest stops growing or we hit the cap.
+    // Scroll + "더보기" until the harvest stops growing, we hit the cap, or we
+    // run out of time budget.
     let stable = 0;
-    for (let i = 0; i < 40 && harvested.length < MAX_REVIEWS && stable < 4; i++) {
+    for (
+      let i = 0;
+      i < 60 &&
+      harvested.length < MAX_REVIEWS &&
+      stable < 5 &&
+      elapsed() < TIME_BUDGET_MS;
+      i++
+    ) {
       const before = harvested.length;
       await page.mouse.wheel(0, 6000).catch(() => {});
-      for (const name of [/후기 더보기/, /더보기/, /더 보기/]) {
+      for (const name of [/후기 더보기/, /더보기/, /더 보기/, /리뷰 더보기/]) {
         await page
           .getByRole("button", { name })
           .first()
@@ -171,13 +203,48 @@ async function scrapeKakao(placeId) {
       reviews.push(r);
     });
 
-    return { placeId: String(placeId), reviews: reviews.slice(0, MAX_REVIEWS) };
+    console.log(
+      `[done] placeId=${placeId} harvested=${harvested.length} unique=${reviews.length} apiCalls=${apiLog.length} elapsed=${elapsed()}ms`,
+    );
+
+    return {
+      placeId: String(placeId),
+      reviews: reviews.slice(0, MAX_REVIEWS),
+      debug: {
+        elapsedMs: elapsed(),
+        pageUrl,
+        pageTitle,
+        harvested: harvested.length,
+        uniqueReviews: reviews.length,
+        apiCalls: apiLog.length,
+        apiLog: apiLog.slice(0, 60),
+      },
+    };
   } finally {
     await browser.close().catch(() => {});
   }
 }
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// Diagnostic: open in a browser (no token) to see exactly what the worker
+// harvests for a placeId — which APIs fire, counts, timing, sample reviews.
+//   /debug?placeId=23985599
+app.get("/debug", async (req, res) => {
+  const placeId = String(req.query.placeId || "").trim();
+  if (!placeId) return res.status(400).json({ error: "placeId query required" });
+  try {
+    const out = await scrapeKakao(placeId);
+    res.json({
+      placeId: out.placeId,
+      reviewsCount: out.reviews.length,
+      sample: out.reviews.slice(0, 3),
+      debug: out.debug,
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 
 app.post("/collect", async (req, res) => {
   if (TOKEN && req.get("x-worker-token") !== TOKEN) {
