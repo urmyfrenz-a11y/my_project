@@ -101,7 +101,9 @@ async function scrapeNaver(query) {
           placeId = String(first.id);
           placeName = first.name || query;
         } else {
-          diag += ` placeList=${Array.isArray(list) ? list.length : "none"}`;
+          diag += ` keys=[${Object.keys(j || {}).join(",")}] rkeys=[${Object.keys(
+            j?.result || {},
+          ).join(",")}] snip=${JSON.stringify(j).slice(0, 500)}`;
         }
       }
     } catch (e) {
