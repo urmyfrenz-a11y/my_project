@@ -152,53 +152,64 @@ async function naverViaScrapingApi(query: string): Promise<CollectResult> {
  * place plus a slice of the raw rendered HTML and the parse count, so we can
  * refine parseReviews against real Naver markup without shipping guesses.
  */
-export async function naverDebug(query: string): Promise<{
-  hasKey: boolean;
-  place: NaverPlace | null;
-  reviewUrl: string | null;
-  status: number;
-  bodyLength: number;
-  parsed: number;
-  htmlSample: string;
-}> {
-  if (!config.naver.scrapingKey) {
-    return {
-      hasKey: false,
-      place: null,
-      reviewUrl: null,
-      status: 0,
-      bodyLength: 0,
-      parsed: 0,
-      htmlSample: "",
+export async function naverDebug(query: string): Promise<Record<string, unknown>> {
+  if (!config.naver.scrapingKey) return { hasKey: false };
+
+  // Step 1: raw allSearch response (place resolution).
+  const api =
+    "https://map.naver.com/p/api/search/allSearch?type=all&searchCoord=&boundary=&query=" +
+    encodeURIComponent(query);
+  const search = await sdGet(api, false, 40000);
+  let place: NaverPlace | null = null;
+  let placeParseError: string | null = null;
+  try {
+    const j = JSON.parse(search.body) as {
+      result?: { place?: { list?: Array<Record<string, unknown>> } };
     };
+    const first = j?.result?.place?.list?.[0];
+    if (first?.id) {
+      const type =
+        (typeof first.businessType === "string" && first.businessType) ||
+        "place";
+      place = { id: String(first.id), name: (first.name as string) || query, type };
+    } else {
+      placeParseError = "no result.place.list[0].id";
+    }
+  } catch (e) {
+    placeParseError = "JSON.parse failed: " + String(e);
   }
-  const place = await resolveNaverPlace(query);
-  if (!place) {
-    return {
-      hasKey: true,
-      place: null,
-      reviewUrl: null,
-      status: 0,
-      bodyLength: 0,
-      parsed: 0,
-      htmlSample: "",
-    };
-  }
-  const reviewUrl = `https://m.place.naver.com/${place.type}/${place.id}/review/visitor`;
-  const { status, body } = await sdGet(reviewUrl, true, 55000);
-  const parsed = parseReviews(body, place.id).length;
-  // Grab a window around the first likely review marker to inspect real markup.
-  const anchor = body.search(/rvbody|pui__|review|리뷰/i);
-  const start = anchor > 400 ? anchor - 400 : 0;
-  return {
+
+  const out: Record<string, unknown> = {
     hasKey: true,
+    query,
+    allSearch: {
+      ok: search.ok,
+      status: search.status,
+      bodyLength: search.body.length,
+      sample: search.body.slice(0, 1500),
+    },
     place,
-    reviewUrl,
-    status,
-    bodyLength: body.length,
-    parsed,
-    htmlSample: body.slice(start, start + 3000),
+    placeParseError,
   };
+
+  // Step 2: if resolved, fetch the review page and sample its HTML.
+  if (place) {
+    const reviewUrl = `https://m.place.naver.com/${place.type}/${place.id}/review/visitor`;
+    const rev = await sdGet(reviewUrl, true, 55000);
+    const parsed = parseReviews(rev.body, place.id);
+    const anchor = rev.body.search(/rvbody|pui__|review|리뷰|평점|방문/i);
+    const start = anchor > 500 ? anchor - 500 : 0;
+    out.review = {
+      reviewUrl,
+      ok: rev.ok,
+      status: rev.status,
+      bodyLength: rev.body.length,
+      parsedCount: parsed.length,
+      firstParsed: parsed.slice(0, 3).map((r) => r.text),
+      htmlSample: rev.body.slice(start, start + 4000),
+    };
+  }
+  return out;
 }
 
 interface WorkerResponse {
