@@ -37,7 +37,7 @@ export async function searchPlaces(
   query: string,
 ): Promise<PlaceSearchResult[]> {
   const settled = await Promise.allSettled([
-    googleSearchPlaces(query),
+    googleSearchPlaces(),
     kakaoSearchPlaces(query),
   ]);
   return settled.flatMap((s) => (s.status === "fulfilled" ? s.value : []));

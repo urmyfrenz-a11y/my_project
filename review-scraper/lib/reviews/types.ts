@@ -5,7 +5,7 @@
 export type Platform = "google" | "kakao" | "naver";
 
 export const PLATFORM_LABELS: Record<Platform, string> = {
-  google: "구글맵",
+  google: "구글 검색",
   kakao: "카카오맵",
   naver: "네이버 플레이스",
 };

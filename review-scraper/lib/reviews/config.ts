@@ -1,7 +1,10 @@
 /** Centralized env access so adapters never read process.env directly. */
 export const config = {
   google: {
-    apiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
+    // "구글 검색" source. Google blocks datacenter-IP scraping, so we use a
+    // free third-party SERP API (Serper.dev). Optional — without it the
+    // Google Search source shows "준비중".
+    serperKey: process.env.SERPER_API_KEY ?? "",
   },
   kakao: {
     restKey: process.env.KAKAO_REST_API_KEY ?? "",

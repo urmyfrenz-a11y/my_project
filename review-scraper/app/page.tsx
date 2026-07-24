@@ -1,7 +1,7 @@
 import ReviewClient from "./ReviewClient";
 
 const SOURCES = [
-  { label: "구글맵", dot: "bg-blue-500" },
+  { label: "구글 검색", dot: "bg-blue-500" },
   { label: "카카오맵", dot: "bg-amber-400" },
   { label: "네이버", dot: "bg-emerald-500" },
 ];

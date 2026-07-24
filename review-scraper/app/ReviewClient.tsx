@@ -1,40 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import {
+  analyze,
+  combineInsights,
+  type SourceAnalysis,
+  type Insights,
+} from "@/lib/reviews/analysis";
 
-type Platform = "google" | "kakao" | "naver";
-
-interface UnifiedReview {
-  platform: Platform;
-  placeId: string;
-  reviewId: string;
-  author: string;
-  rating: number | null;
-  text: string;
-  createdAt?: string;
-  likeCount?: number;
-  source: "api" | "scrape";
-}
-
-interface PlaceSearchResult {
-  platform: Platform;
-  placeId: string;
-  name: string;
-  address?: string;
-  category?: string;
-  rating?: number;
-  reviewCount?: number;
-  url?: string;
-}
-
-interface CollectResult {
-  platform: Platform;
-  place: PlaceSearchResult | null;
-  reviews: UnifiedReview[];
-  ok: boolean;
-  error?: string;
-  errorCode?: string;
-}
+import type {
+  Platform,
+  UnifiedReview,
+  CollectResult,
+} from "@/lib/reviews/types";
 
 const ALL_PLATFORMS: Platform[] = ["google", "kakao", "naver"];
 
@@ -43,7 +21,7 @@ const META: Record<
   { label: string; dot: string; solid: string; soft: string }
 > = {
   google: {
-    label: "구글맵",
+    label: "구글 검색",
     dot: "bg-blue-500",
     solid: "bg-blue-600 text-white border-blue-600",
     soft: "text-blue-600 dark:text-blue-400",
@@ -68,6 +46,11 @@ export default function ReviewClient() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<CollectResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const insights = useMemo(
+    () => (results ? combineInsights(results) : null),
+    [results],
+  );
 
   function togglePlatform(p: Platform) {
     setSelected((prev) =>
@@ -173,12 +156,68 @@ export default function ReviewClient() {
 
       {results && (
         <div className="space-y-4">
+          {insights && <InsightsCard insights={insights} />}
           {results.map((r) => (
             <PlatformCard key={r.platform} result={r} />
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function InsightsCard({ insights }: { insights: Insights }) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50/80 to-card shadow-sm dark:border-indigo-900/50 dark:from-indigo-950/30">
+      <div className="flex items-center gap-2 px-5 pt-4">
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-violet-600 text-white">
+          <SparkIcon />
+        </span>
+        <h2 className="text-sm font-semibold">핵심 인사이트</h2>
+        <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium text-indigo-600 ring-1 ring-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:ring-indigo-900">
+          통계 기반
+        </span>
+      </div>
+
+      <div className="space-y-4 px-5 py-4">
+        <p className="text-sm leading-relaxed">{insights.summary}</p>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between text-xs text-muted">
+            <span>전반적 감성</span>
+            <span className="tabular-nums">
+              긍정 {insights.posPct}% · 중립 {insights.neuPct}% · 부정{" "}
+              {insights.negPct}%
+            </span>
+          </div>
+          <SentimentBar counts={insights.counts} />
+        </div>
+
+        {insights.keywords.length > 0 && (
+          <div>
+            <div className="mb-1.5 text-xs text-muted">자주 언급된 키워드</div>
+            <KeywordChips items={insights.keywords} accent />
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-line pt-3 text-xs text-muted">
+          <span>
+            총 <b className="text-foreground">{insights.total}</b>개 리뷰
+          </span>
+          {insights.avgRating !== null && (
+            <span>
+              평균 평점{" "}
+              <b className="text-foreground">{insights.avgRating.toFixed(1)}</b>
+            </span>
+          )}
+          {insights.bySource.map((s) => (
+            <span key={s.platform}>
+              {META[s.platform].label} {s.count}
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -197,6 +236,8 @@ function PlatformCard({ result }: { result: CollectResult }) {
           (rated.reduce((s, r) => s + r.rating, 0) / rated.length) * 10,
         ) / 10
       : null;
+  const analysis: SourceAnalysis | null =
+    ok && reviews.length > 0 ? analyze(reviews) : null;
 
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-card shadow-sm shadow-black/[0.03]">
@@ -268,6 +309,25 @@ function PlatformCard({ result }: { result: CollectResult }) {
           {rated.length > 1 && (
             <div className="mb-5">
               <RatingBars reviews={rated} />
+            </div>
+          )}
+
+          {/* sentiment + keywords */}
+          {analysis && analysis.total > 0 && (
+            <div className="mb-5 space-y-3 rounded-xl border border-line bg-neutral-50/60 p-3.5 dark:bg-neutral-900/40">
+              <div>
+                <div className="mb-1.5 flex items-center justify-between text-xs text-muted">
+                  <span>감성 분석</span>
+                  <span className="tabular-nums">
+                    긍정 {pct(analysis.counts.pos, analysis.total)}% · 부정{" "}
+                    {pct(analysis.counts.neg, analysis.total)}%
+                  </span>
+                </div>
+                <SentimentBar counts={analysis.counts} />
+              </div>
+              {analysis.keywords.length > 0 && (
+                <KeywordChips items={analysis.keywords} />
+              )}
             </div>
           )}
 
@@ -401,7 +461,71 @@ function EmptyState() {
   );
 }
 
+function pct(n: number, total: number) {
+  return total > 0 ? Math.round((n / total) * 100) : 0;
+}
+
+function SentimentBar({
+  counts,
+}: {
+  counts: { pos: number; neu: number; neg: number };
+}) {
+  const total = counts.pos + counts.neu + counts.neg || 1;
+  const seg = [
+    { v: counts.pos, cls: "bg-emerald-500" },
+    { v: counts.neu, cls: "bg-neutral-300 dark:bg-neutral-600" },
+    { v: counts.neg, cls: "bg-rose-500" },
+  ];
+  return (
+    <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+      {seg.map((s, i) =>
+        s.v > 0 ? (
+          <div
+            key={i}
+            className={s.cls}
+            style={{ width: `${(s.v / total) * 100}%` }}
+          />
+        ) : null,
+      )}
+    </div>
+  );
+}
+
+function KeywordChips({
+  items,
+  accent,
+}: {
+  items: { word: string; count: number }[];
+  accent?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map((k) => (
+        <span
+          key={k.word}
+          className={
+            accent
+              ? "inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-medium text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
+              : "inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+          }
+        >
+          {k.word}
+          <span className="tabular-nums opacity-60">{k.count}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /* ── icons ─────────────────────────────────────────── */
+
+function SparkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+      <path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2zM19 14l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 14z" />
+    </svg>
+  );
+}
 
 function SearchIcon({ className }: { className?: string }) {
   return (
