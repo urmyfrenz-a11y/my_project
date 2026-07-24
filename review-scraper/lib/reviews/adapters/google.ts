@@ -4,8 +4,8 @@ import { fetchWithTimeout } from "../util";
 
 // "구글 검색" source. Google blocks scraping from datacenter IPs, and we don't
 // want the paid Google API, so we use Serper.dev (free tier) to fetch real
-// Google search results and treat each result snippet as a text item that the
-// UI runs sentiment analysis on.
+// Google search results. Each result snippet becomes a collected text item
+// that ships in the downloadable .txt alongside the map reviews.
 const SERPER = "https://google.serper.dev/search";
 
 function sourceName(link: string): string {

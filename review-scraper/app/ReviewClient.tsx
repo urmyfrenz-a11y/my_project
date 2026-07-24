@@ -1,12 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  analyze,
-  combineInsights,
-  type SourceAnalysis,
-  type Insights,
-} from "@/lib/reviews/analysis";
 
 import type {
   Platform,
@@ -18,37 +12,119 @@ const ALL_PLATFORMS: Platform[] = ["google", "kakao", "naver"];
 
 const META: Record<
   Platform,
-  { label: string; dot: string; solid: string; soft: string }
+  { label: string; short: string; dot: string; solid: string; soft: string }
 > = {
   google: {
     label: "구글 검색",
+    short: "구글",
     dot: "bg-blue-500",
     solid: "bg-blue-600 text-white border-blue-600",
     soft: "text-blue-600 dark:text-blue-400",
   },
   kakao: {
     label: "카카오맵",
+    short: "카카오",
     dot: "bg-amber-400",
     solid: "bg-amber-500 text-white border-amber-500",
     soft: "text-amber-600 dark:text-amber-400",
   },
   naver: {
     label: "네이버 플레이스",
+    short: "네이버",
     dot: "bg-emerald-500",
     solid: "bg-emerald-600 text-white border-emerald-600",
     soft: "text-emerald-600 dark:text-emerald-400",
   },
 };
 
+/* ── txt export helpers ───────────────────────────────── */
+
+function avgOf(reviews: UnifiedReview[]): number | null {
+  const rated = reviews.filter((r) => r.rating !== null) as (UnifiedReview & {
+    rating: number;
+  })[];
+  if (rated.length === 0) return null;
+  return (
+    Math.round((rated.reduce((s, r) => s + r.rating, 0) / rated.length) * 10) /
+    10
+  );
+}
+
+function fmtDate(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("ko-KR");
+}
+
+function reviewBlock(r: UnifiedReview): string {
+  const bits: string[] = [];
+  if (r.rating !== null) bits.push(`★${r.rating}`);
+  if (r.author) bits.push(r.author);
+  const date = fmtDate(r.createdAt);
+  if (date) bits.push(date);
+  const head = bits.join(" · ");
+  return `${head ? head + "\n" : ""}${r.text}`;
+}
+
+function txtForSource(r: CollectResult): string {
+  const place = r.place?.name ?? "";
+  const avg = avgOf(r.reviews);
+  const lines = [
+    `[${META[r.platform].label}] ${place}`.trim(),
+    `수집 리뷰 ${r.reviews.length}개` +
+      (avg !== null ? ` · 평균 별점 ${avg.toFixed(1)}` : ""),
+    r.place?.url ? `원본: ${r.place.url}` : "",
+    "=".repeat(48),
+    "",
+  ].filter(Boolean);
+  const body = r.reviews.map(reviewBlock).join("\n\n----\n\n");
+  return lines.join("\n") + "\n" + body + "\n";
+}
+
+function txtCombined(query: string, results: CollectResult[]): string {
+  const usable = results.filter((r) => r.ok && r.reviews.length > 0);
+  const header = [
+    `장소 리뷰 수집 — "${query}"`,
+    `수집 소스: ${usable.map((r) => META[r.platform].label).join(", ")}`,
+    `총 ${usable.reduce((s, r) => s + r.reviews.length, 0)}개 리뷰`,
+    "#".repeat(48),
+    "",
+    "",
+  ].join("\n");
+  return header + usable.map(txtForSource).join("\n\n\n");
+}
+
+function download(filename: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function safeName(s: string): string {
+  return (s || "reviews").replace(/[^\w가-힣]+/g, "_").slice(0, 40);
+}
+
+/* ── component ────────────────────────────────────────── */
+
 export default function ReviewClient() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Platform[]>(["kakao"]);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<CollectResult[] | null>(null);
+  const [submitted, setSubmitted] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const insights = useMemo(
-    () => (results ? combineInsights(results) : null),
+  const totalReviews = useMemo(
+    () =>
+      results
+        ? results.reduce((s, r) => s + (r.ok ? r.reviews.length : 0), 0)
+        : 0,
     [results],
   );
 
@@ -64,15 +140,17 @@ export default function ReviewClient() {
     setLoading(true);
     setError(null);
     setResults(null);
+    const q = query.trim();
     try {
       const res = await fetch("/api/reviews/collect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim(), platforms: selected }),
+        body: JSON.stringify({ query: q, platforms: selected }),
       });
       if (!res.ok) throw new Error(`요청 실패 (${res.status})`);
       const data = (await res.json()) as { results: CollectResult[] };
       setResults(data.results);
+      setSubmitted(q);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -81,6 +159,9 @@ export default function ReviewClient() {
   }
 
   const canSubmit = query.trim().length > 0 && selected.length > 0 && !loading;
+  const downloadable = (results ?? []).filter(
+    (r) => r.ok && r.reviews.length > 0,
+  );
 
   return (
     <div className="w-full space-y-8">
@@ -156,9 +237,38 @@ export default function ReviewClient() {
 
       {results && (
         <div className="space-y-4">
-          {insights && <InsightsCard insights={insights} />}
+          {/* combined download banner */}
+          {downloadable.length > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50/80 to-card px-5 py-4 shadow-sm dark:border-indigo-900/50 dark:from-indigo-950/30">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold">
+                  리뷰 {totalReviews}개 수집 완료
+                </div>
+                <p className="mt-0.5 text-xs text-muted">
+                  {downloadable.map((r) => META[r.platform].short).join(" · ")}{" "}
+                  리뷰를 텍스트 파일로 내려받아 분석에 쓰세요.
+                </p>
+              </div>
+              {downloadable.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    download(
+                      `${safeName(submitted)}_전체리뷰.txt`,
+                      txtCombined(submitted, results),
+                    )
+                  }
+                  className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:brightness-110"
+                >
+                  <DownloadIcon />
+                  전체 .txt 다운로드
+                </button>
+              )}
+            </div>
+          )}
+
           {results.map((r) => (
-            <PlatformCard key={r.platform} result={r} />
+            <PlatformCard key={r.platform} result={r} query={submitted} />
           ))}
         </div>
       )}
@@ -166,62 +276,13 @@ export default function ReviewClient() {
   );
 }
 
-function InsightsCard({ insights }: { insights: Insights }) {
-  return (
-    <section className="overflow-hidden rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50/80 to-card shadow-sm dark:border-indigo-900/50 dark:from-indigo-950/30">
-      <div className="flex items-center gap-2 px-5 pt-4">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-violet-600 text-white">
-          <SparkIcon />
-        </span>
-        <h2 className="text-sm font-semibold">핵심 인사이트</h2>
-        <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium text-indigo-600 ring-1 ring-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:ring-indigo-900">
-          통계 기반
-        </span>
-      </div>
-
-      <div className="space-y-4 px-5 py-4">
-        <p className="text-sm leading-relaxed">{insights.summary}</p>
-
-        <div>
-          <div className="mb-1.5 flex items-center justify-between text-xs text-muted">
-            <span>전반적 감성</span>
-            <span className="tabular-nums">
-              긍정 {insights.posPct}% · 중립 {insights.neuPct}% · 부정{" "}
-              {insights.negPct}%
-            </span>
-          </div>
-          <SentimentBar counts={insights.counts} />
-        </div>
-
-        {insights.keywords.length > 0 && (
-          <div>
-            <div className="mb-1.5 text-xs text-muted">자주 언급된 키워드</div>
-            <KeywordChips items={insights.keywords} accent />
-          </div>
-        )}
-
-        <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-line pt-3 text-xs text-muted">
-          <span>
-            총 <b className="text-foreground">{insights.total}</b>개 리뷰
-          </span>
-          {insights.avgRating !== null && (
-            <span>
-              평균 평점{" "}
-              <b className="text-foreground">{insights.avgRating.toFixed(1)}</b>
-            </span>
-          )}
-          {insights.bySource.map((s) => (
-            <span key={s.platform}>
-              {META[s.platform].label} {s.count}
-            </span>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PlatformCard({ result }: { result: CollectResult }) {
+function PlatformCard({
+  result,
+  query,
+}: {
+  result: CollectResult;
+  query: string;
+}) {
   const { platform, place, reviews, ok, error, errorCode } = result;
   const m = META[platform];
   const notReady =
@@ -230,14 +291,7 @@ function PlatformCard({ result }: { result: CollectResult }) {
   const rated = reviews.filter((r) => r.rating !== null) as (UnifiedReview & {
     rating: number;
   })[];
-  const avg =
-    rated.length > 0
-      ? Math.round(
-          (rated.reduce((s, r) => s + r.rating, 0) / rated.length) * 10,
-        ) / 10
-      : null;
-  const analysis: SourceAnalysis | null =
-    ok && reviews.length > 0 ? analyze(reviews) : null;
+  const avg = avgOf(reviews);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-card shadow-sm shadow-black/[0.03]">
@@ -273,38 +327,55 @@ function PlatformCard({ result }: { result: CollectResult }) {
 
       {ok && (
         <div className="px-5 py-4">
-          {/* summary */}
-          {(avg !== null || place?.address || place?.url) && (
-            <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-3">
-              {avg !== null && (
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl font-bold tabular-nums leading-none">
-                    {avg.toFixed(1)}
-                  </span>
-                  <div>
-                    <StarRow value={avg} />
-                    <div className="mt-0.5 text-xs text-muted">
-                      {rated.length}개 평점
-                    </div>
+          {/* summary row */}
+          <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+            {avg !== null ? (
+              <div className="flex items-center gap-3">
+                <span className="text-3xl font-bold tabular-nums leading-none">
+                  {avg.toFixed(1)}
+                </span>
+                <div>
+                  <StarRow value={avg} />
+                  <div className="mt-0.5 text-xs text-muted">
+                    {rated.length}개 평점 · 총 {reviews.length}개 리뷰
                   </div>
                 </div>
-              )}
-              {place?.address && (
-                <span className="text-sm text-muted">{place.address}</span>
-              )}
-              {place?.url && (
-                <a
-                  href={place.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={`ml-auto inline-flex items-center gap-1 text-sm font-medium ${m.soft} hover:underline`}
-                >
-                  원본 보기
-                  <ExternalIcon />
-                </a>
-              )}
-            </div>
-          )}
+              </div>
+            ) : (
+              <div className="text-sm text-muted">
+                <b className="text-foreground">{reviews.length}</b>개 리뷰 수집
+                <span className="ml-2 text-xs">(별점 없는 소스)</span>
+              </div>
+            )}
+
+            {place?.url && (
+              <a
+                href={place.url}
+                target="_blank"
+                rel="noreferrer"
+                className={`inline-flex items-center gap-1 text-sm font-medium ${m.soft} hover:underline`}
+              >
+                원본 보기
+                <ExternalIcon />
+              </a>
+            )}
+
+            {reviews.length > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  download(
+                    `${safeName(query)}_${m.short}.txt`,
+                    txtForSource(result),
+                  )
+                }
+                className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-xs font-semibold text-foreground shadow-sm transition hover:bg-neutral-50 dark:hover:bg-neutral-800"
+              >
+                <DownloadIcon className="h-3.5 w-3.5" />
+                .txt 다운로드
+              </button>
+            )}
+          </div>
 
           {rated.length > 1 && (
             <div className="mb-5">
@@ -312,40 +383,23 @@ function PlatformCard({ result }: { result: CollectResult }) {
             </div>
           )}
 
-          {/* sentiment + keywords */}
-          {analysis && analysis.total > 0 && (
-            <div className="mb-5 space-y-3 rounded-xl border border-line bg-neutral-50/60 p-3.5 dark:bg-neutral-900/40">
-              <div>
-                <div className="mb-1.5 flex items-center justify-between text-xs text-muted">
-                  <span>감성 분석</span>
-                  <span className="tabular-nums">
-                    긍정 {pct(analysis.counts.pos, analysis.total)}% · 부정{" "}
-                    {pct(analysis.counts.neg, analysis.total)}%
-                  </span>
-                </div>
-                <SentimentBar counts={analysis.counts} />
-              </div>
-              {analysis.keywords.length > 0 && (
-                <KeywordChips items={analysis.keywords} />
-              )}
-            </div>
-          )}
-
-          {/* reviews */}
+          {/* review preview */}
           {reviews.length > 0 ? (
-            <ul className="divide-y divide-line">
-              {reviews.slice(0, 20).map((r) => (
-                <ReviewItem key={r.reviewId} r={r} />
-              ))}
-            </ul>
+            <>
+              <ul className="divide-y divide-line">
+                {reviews.slice(0, 10).map((r) => (
+                  <ReviewItem key={r.reviewId} r={r} />
+                ))}
+              </ul>
+              {reviews.length > 10 && (
+                <p className="pt-3 text-center text-xs text-muted">
+                  미리보기 10개 · 전체 {reviews.length}개는 .txt 다운로드로
+                  확인하세요
+                </p>
+              )}
+            </>
           ) : (
             <p className="py-2 text-sm text-muted">수집된 리뷰가 없습니다.</p>
-          )}
-
-          {reviews.length > 20 && (
-            <p className="pt-3 text-center text-xs text-muted">
-              최근 20개만 표시 (총 {reviews.length}개 수집)
-            </p>
           )}
         </div>
       )}
@@ -455,77 +509,14 @@ function EmptyState() {
       </div>
       <p className="text-sm font-medium">장소를 검색해 리뷰를 모아보세요</p>
       <p className="mt-1 text-xs text-muted">
-        가게 이름을 입력하고 수집 대상을 골라 “리뷰 수집”을 누르세요.
+        가게 이름을 입력하고 수집 대상을 골라 “리뷰 수집”을 누르면, 요약과 함께
+        전체 리뷰를 .txt 로 내려받을 수 있습니다.
       </p>
     </div>
   );
 }
 
-function pct(n: number, total: number) {
-  return total > 0 ? Math.round((n / total) * 100) : 0;
-}
-
-function SentimentBar({
-  counts,
-}: {
-  counts: { pos: number; neu: number; neg: number };
-}) {
-  const total = counts.pos + counts.neu + counts.neg || 1;
-  const seg = [
-    { v: counts.pos, cls: "bg-emerald-500" },
-    { v: counts.neu, cls: "bg-neutral-300 dark:bg-neutral-600" },
-    { v: counts.neg, cls: "bg-rose-500" },
-  ];
-  return (
-    <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
-      {seg.map((s, i) =>
-        s.v > 0 ? (
-          <div
-            key={i}
-            className={s.cls}
-            style={{ width: `${(s.v / total) * 100}%` }}
-          />
-        ) : null,
-      )}
-    </div>
-  );
-}
-
-function KeywordChips({
-  items,
-  accent,
-}: {
-  items: { word: string; count: number }[];
-  accent?: boolean;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {items.map((k) => (
-        <span
-          key={k.word}
-          className={
-            accent
-              ? "inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-medium text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
-              : "inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-          }
-        >
-          {k.word}
-          <span className="tabular-nums opacity-60">{k.count}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
 /* ── icons ─────────────────────────────────────────── */
-
-function SparkIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
-      <path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2zM19 14l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 14z" />
-    </svg>
-  );
-}
 
 function SearchIcon({ className }: { className?: string }) {
   return (
@@ -536,6 +527,20 @@ function SearchIcon({ className }: { className?: string }) {
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className ?? "h-4 w-4"}>
+      <path
+        d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
