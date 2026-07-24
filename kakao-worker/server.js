@@ -118,24 +118,35 @@ async function scrapeKakao(placeId) {
     const page = await ctx.newPage();
 
     const harvested = [];
-    // Log EVERY place-api response so we can see which endpoint carries
-    // reviews and whether pagination actually fires as we scroll.
+    const hosts = new Set();
+    // Watch ALL JSON responses (any host) + any review/api-looking URL, so we
+    // can discover where the review data actually comes from.
     page.on("response", async (resp) => {
       try {
         const url = resp.url();
-        if (!url.includes(API_HOST)) return;
-        const status = resp.status();
         const ct = resp.headers()["content-type"] ?? "";
-        if (!ct.includes("json")) {
-          apiLog.push({ status, n: 0, url: url.slice(0, 180) });
-          return;
+        const isJson = ct.includes("json");
+        const interesting =
+          isJson || /review|comment|panel|api|graphql|place/i.test(url);
+        if (!interesting) return;
+        try {
+          hosts.add(new URL(url).host);
+        } catch {}
+        let n = 0;
+        if (isJson) {
+          const json = await resp.json();
+          const before = harvested.length;
+          harvest(json, harvested);
+          n = harvested.length - before;
         }
-        const json = await resp.json();
-        const before = harvested.length;
-        harvest(json, harvested);
-        const n = harvested.length - before;
-        apiLog.push({ status, n, url: url.slice(0, 180) });
-        console.log(`[api] ${status} +${n} (total ${harvested.length}) ${url.slice(0, 160)}`);
+        apiLog.push({
+          status: resp.status(),
+          n,
+          ct: ct.slice(0, 30),
+          url: url.slice(0, 200),
+        });
+        if (n > 0)
+          console.log(`[api] +${n} (total ${harvested.length}) ${url.slice(0, 160)}`);
       } catch {
         /* ignore non-JSON / aborted */
       }
@@ -191,6 +202,45 @@ async function scrapeKakao(placeId) {
       stable = harvested.length === before ? stable + 1 : 0;
     }
 
+    // Some Kakao pages ship data server-side (in the HTML) instead of via XHR.
+    // Harvest from embedded JSON blobs too.
+    let embedded = { nextData: 0, inlineBlobs: 0, keys: [] };
+    try {
+      const blobs = await page.evaluate(() => {
+        const res = { nextData: null, blobs: [], keys: [] };
+        const nd = document.getElementById("__NEXT_DATA__");
+        if (nd && nd.textContent) res.nextData = nd.textContent;
+        // Any inline <script> containing a big JSON-ish object with review words
+        for (const s of Array.from(document.scripts)) {
+          const t = s.textContent || "";
+          if (t.length > 500 && /review|contents|star_rating|blog/i.test(t)) {
+            res.blobs.push(t.slice(0, 200000));
+          }
+        }
+        try {
+          if (window.__PLACE__ || window.__APP__ || window.__INITIAL_STATE__)
+            res.keys = Object.keys(window);
+        } catch {}
+        return res;
+      });
+      if (blobs.nextData) {
+        try {
+          const before = harvested.length;
+          harvest(JSON.parse(blobs.nextData), harvested);
+          embedded.nextData = harvested.length - before;
+        } catch {}
+      }
+      for (const b of blobs.blobs || []) {
+        embedded.inlineBlobs += 1;
+        const m = b.match(/\{[\s\S]*\}/);
+        if (m) {
+          try {
+            harvest(JSON.parse(m[0]), harvested);
+          } catch {}
+        }
+      }
+    } catch {}
+
     // Normalize + de-dupe.
     const seen = new Set();
     const reviews = [];
@@ -217,6 +267,8 @@ async function scrapeKakao(placeId) {
         harvested: harvested.length,
         uniqueReviews: reviews.length,
         apiCalls: apiLog.length,
+        jsonHosts: Array.from(hosts),
+        embedded,
         apiLog: apiLog.slice(0, 60),
       },
     };
