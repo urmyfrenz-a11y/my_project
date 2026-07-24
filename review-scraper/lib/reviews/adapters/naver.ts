@@ -45,7 +45,7 @@ export async function naverCollect(query: string): Promise<CollectResult> {
         },
         body: JSON.stringify({ query }),
       },
-      45000,
+      55000,
     );
     if (!res.ok) {
       return {

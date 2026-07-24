@@ -86,7 +86,7 @@ async function scrapeNaver(query) {
       // The list is a client-rendered SPA ("로딩중" until JS populates it),
       // so wait for the first place link to actually appear before reading it.
       await page
-        .waitForSelector('a[href*="/place/"]', { timeout: 15000 })
+        .waitForSelector('a[href*="/place/"]', { timeout: 9000 })
         .catch(() => {});
       const href = await page
         .locator('a[href*="/place/"]')
@@ -140,10 +140,13 @@ async function scrapeNaver(query) {
       }
     });
 
+    // domcontentloaded + a short settle is much faster than networkidle,
+    // which rarely settles on Naver (continuous background requests).
     await page.goto(
       `https://m.place.naver.com/place/${placeId}/review/visitor`,
-      { waitUntil: "networkidle", timeout: 25000 },
+      { waitUntil: "domcontentloaded", timeout: 20000 },
     );
+    await page.waitForTimeout(2500);
     placeName =
       (
         await page
@@ -153,16 +156,17 @@ async function scrapeNaver(query) {
           .catch(() => null)
       )?.trim() || placeName;
 
-    // 3) scroll to lazy-load more
+    // 3) scroll to lazy-load more (kept short so we stay well under the
+    //    caller's timeout; free-tier CPU is slow).
     let stable = 0;
-    for (let i = 0; i < 25 && harvested.length < MAX_REVIEWS && stable < 3; i++) {
+    for (let i = 0; i < 8 && harvested.length < MAX_REVIEWS && stable < 2; i++) {
       const before = harvested.length;
-      await page.mouse.wheel(0, 4000);
+      await page.mouse.wheel(0, 5000);
       await page
         .getByRole("button", { name: /더보기|더 보기/ })
-        .click({ timeout: 1200 })
+        .click({ timeout: 500 })
         .catch(() => {});
-      await page.waitForTimeout(900);
+      await page.waitForTimeout(700);
       stable = harvested.length === before ? stable + 1 : 0;
     }
 
