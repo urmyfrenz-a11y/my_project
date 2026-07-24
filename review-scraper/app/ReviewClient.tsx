@@ -268,12 +268,7 @@ export default function ReviewClient() {
                 >
                   {active && <CheckIcon />}
                 </span>
-                <span className={`h-1.5 w-1.5 rounded-full ${META[p].dot}`} />
-                <span
-                  className={
-                    active ? "font-medium" : "text-muted"
-                  }
-                >
+                <span className={active ? "font-medium" : "text-muted"}>
                   {META[p].label}
                 </span>
               </button>

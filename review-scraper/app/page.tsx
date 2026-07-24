@@ -61,8 +61,8 @@ export default function Home() {
         </div>
 
         <footer className="mt-16 text-center text-xs text-muted">
-          작성자 정보는 익명 처리되어 표시됩니다 · 개인 · 연구 목적으로
-          이용하세요.
+          작성자 정보는 익명 처리되어 표시됩니다 · 개인 · 연구 목적으로만
+          이용하시기 바랍니다.
         </footer>
       </div>
     </main>
