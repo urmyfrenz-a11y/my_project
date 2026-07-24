@@ -42,34 +42,39 @@ interface NaverPlace {
   type: string; // m.place.naver.com path segment (restaurant/place/hairshop…)
 }
 
-/** Resolve a query to a Naver place (id + name + type) via allSearch JSON. */
+/**
+ * Extract the first Naver place (id + m.place path segment) from a rendered
+ * search-results HTML page. Naver embeds links like
+ * `m.place.naver.com/restaurant/1234567890/home` for each result.
+ */
+function extractPlaceFromHtml(html: string, query: string): NaverPlace | null {
+  const patterns = [
+    /(?:m\.place|pcmap\.place|place)\.naver\.com\/([a-z]+)\/(\d{6,})/i,
+    /"(?:type|businessCategory)"\s*:\s*"([a-z]+)"[^}]*?"id"\s*:\s*"?(\d{6,})/i,
+  ];
+  for (const re of patterns) {
+    const m = re.exec(html);
+    if (m) return { id: m[2], name: query, type: m[1].toLowerCase() };
+  }
+  // Last resort: a bare place id in embedded JSON.
+  const bare = /"(?:placeId|entryId|id)"\s*:\s*"?(\d{7,})"?/i.exec(html);
+  if (bare) return { id: bare[1], name: query, type: "place" };
+  return null;
+}
+
+/**
+ * Resolve a query to a Naver place. Naver's internal search APIs return 403
+ * without a browser context, so we fetch the user-facing mobile search page
+ * (rendered via Scrapingdog) and scrape the first place link out of it.
+ */
 export async function resolveNaverPlace(
   query: string,
 ): Promise<NaverPlace | null> {
-  const api =
-    "https://map.naver.com/p/api/search/allSearch?type=all&searchCoord=&boundary=&query=" +
-    encodeURIComponent(query);
-  const { ok, body } = await sdGet(api, false, 40000);
+  const searchUrl =
+    "https://m.search.naver.com/search.naver?query=" + encodeURIComponent(query);
+  const { ok, body } = await sdGet(searchUrl, true, 50000);
   if (!ok) return null;
-  try {
-    const j = JSON.parse(body) as {
-      result?: { place?: { list?: Array<Record<string, unknown>> } };
-    };
-    const first = j?.result?.place?.list?.[0];
-    if (!first?.id) return null;
-    // businessType is the m.place path segment; fall back to a generic "place".
-    const type =
-      (typeof first.businessType === "string" && first.businessType) ||
-      (typeof first.category === "string" && "place") ||
-      "place";
-    return {
-      id: String(first.id),
-      name: (first.name as string) || query,
-      type,
-    };
-  } catch {
-    return null;
-  }
+  return extractPlaceFromHtml(body, query);
 }
 
 /** Very defensive parse of visitor-review bodies from rendered review HTML. */
@@ -155,41 +160,26 @@ async function naverViaScrapingApi(query: string): Promise<CollectResult> {
 export async function naverDebug(query: string): Promise<Record<string, unknown>> {
   if (!config.naver.scrapingKey) return { hasKey: false };
 
-  // Step 1: raw allSearch response (place resolution).
-  const api =
-    "https://map.naver.com/p/api/search/allSearch?type=all&searchCoord=&boundary=&query=" +
-    encodeURIComponent(query);
-  const search = await sdGet(api, false, 40000);
-  let place: NaverPlace | null = null;
-  let placeParseError: string | null = null;
-  try {
-    const j = JSON.parse(search.body) as {
-      result?: { place?: { list?: Array<Record<string, unknown>> } };
-    };
-    const first = j?.result?.place?.list?.[0];
-    if (first?.id) {
-      const type =
-        (typeof first.businessType === "string" && first.businessType) ||
-        "place";
-      place = { id: String(first.id), name: (first.name as string) || query, type };
-    } else {
-      placeParseError = "no result.place.list[0].id";
-    }
-  } catch (e) {
-    placeParseError = "JSON.parse failed: " + String(e);
-  }
+  // Step 1: fetch the mobile search page (browser-rendered) and extract place.
+  const searchUrl =
+    "https://m.search.naver.com/search.naver?query=" + encodeURIComponent(query);
+  const search = await sdGet(searchUrl, true, 50000);
+  const place = search.ok ? extractPlaceFromHtml(search.body, query) : null;
+  // Sample around the first place link so we can tune the extractor if needed.
+  const linkAt = search.body.search(/place\.naver\.com\/[a-z]+\/\d+/i);
+  const sampleStart = linkAt > 300 ? linkAt - 300 : 0;
 
   const out: Record<string, unknown> = {
     hasKey: true,
     query,
-    allSearch: {
+    search: {
       ok: search.ok,
       status: search.status,
       bodyLength: search.body.length,
-      sample: search.body.slice(0, 1500),
+      hasPlaceLink: linkAt >= 0,
+      sample: search.body.slice(sampleStart, sampleStart + 1500),
     },
     place,
-    placeParseError,
   };
 
   // Step 2: if resolved, fetch the review page and sample its HTML.
