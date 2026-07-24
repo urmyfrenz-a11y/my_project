@@ -1,4 +1,4 @@
-// 장소 리뷰 수집기 — 카카오맵·네이버 검색·네이버 플레이스
+// 장소 리뷰 수집기 — 카카오맵 · 네이버 검색 · 네이버 플레이스
 import ReviewClient from "./ReviewClient";
 
 const SOURCES = [
