@@ -152,16 +152,23 @@ async function scrapeKakao(placeId) {
       }
     });
 
-    // The place page is an SPA; its review section fires the place-api calls
-    // we intercept above.
-    await page.goto(`https://place.map.kakao.com/${placeId}`, {
+    // Load the main map app's place panel — that's where the paginating
+    // review list actually lives (place.map.kakao.com/{id} is a thin page with
+    // no review XHR).
+    const target =
+      process.env.KAKAO_URL_TEMPLATE?.replace("{id}", placeId) ||
+      `https://map.kakao.com/?itemId=${placeId}`;
+    await page.goto(target, {
       waitUntil: "domcontentloaded",
-      timeout: 25000,
+      timeout: 30000,
     });
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(6000);
     pageUrl = page.url();
     pageTitle = (await page.title().catch(() => "")) || "";
-    console.log(`[nav] placeId=${placeId} url=${pageUrl} title="${pageTitle}" harvested=${harvested.length}`);
+    const bodyLen = await page
+      .evaluate(() => document.body?.innerText?.length ?? 0)
+      .catch(() => 0);
+    console.log(`[nav] placeId=${placeId} url=${pageUrl} title="${pageTitle}" bodyLen=${bodyLen} harvested=${harvested.length}`);
 
     // Try to focus the review tab so the review list mounts.
     for (const name of [/후기/, /리뷰/, /블로그/]) {
@@ -267,6 +274,7 @@ async function scrapeKakao(placeId) {
         harvested: harvested.length,
         uniqueReviews: reviews.length,
         apiCalls: apiLog.length,
+        bodyLen,
         jsonHosts: Array.from(hosts),
         embedded,
         apiLog: apiLog.slice(0, 60),
