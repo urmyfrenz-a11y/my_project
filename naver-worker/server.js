@@ -91,7 +91,30 @@ async function scrapeNaver(query) {
       const mm = href?.match(/place\/(\d+)/);
       if (mm) placeId = mm[1];
     }
-    if (!placeId) return { place: null, reviews: [], error: "장소를 찾지 못했습니다." };
+    if (!placeId) {
+      // Diagnostic: understand WHY (anti-bot block vs. changed layout vs. empty).
+      let title = "";
+      try {
+        title = await page.title();
+      } catch {}
+      const anchorCount = await page
+        .locator('a[href*="/place/"]')
+        .count()
+        .catch(() => -1);
+      const bodyText = (
+        await page
+          .locator("body")
+          .innerText()
+          .catch(() => "")
+      )
+        .replace(/\s+/g, " ")
+        .slice(0, 400);
+      return {
+        place: null,
+        reviews: [],
+        error: `장소를 찾지 못했습니다. | url=${page.url()} | title=${title} | anchors=${anchorCount} | body=${bodyText}`,
+      };
+    }
 
     // 2) intercept GraphQL review responses
     const harvested = [];
