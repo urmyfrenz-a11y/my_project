@@ -25,11 +25,12 @@ export async function GET(req: Request) {
         Referer: "https://place.map.kakao.com/",
       };
       const urls = [
-        `https://place-api.map.kakao.com/places/${id}/kakaomap_reviews?order=RECENT&onlyPhotoReview=false&size=20`,
-        `https://place-api.map.kakao.com/places/${id}/kakaomap_reviews?order=RECOMMEND&size=20&page=1`,
-        `https://place-api.map.kakao.com/places/${id}/reviews?order=RECENT&size=20`,
-        `https://place-api.map.kakao.com/reviews?place_id=${id}&order=RECENT&size=20`,
-        `https://place-api.map.kakao.com/places/panel3/${id}`,
+        `https://place-api.map.kakao.com/places/kakaomap_reviews/${id}?order=RECENT&onlyPhotoReview=false&size=20`,
+        `https://place-api.map.kakao.com/places/kakaomap_reviews/${id}?order=RECOMMEND&size=20&page=1`,
+        `https://place-api.map.kakao.com/places/kakaomapReviews/${id}?size=20`,
+        `https://place-api.map.kakao.com/places/reviews/${id}?order=RECENT&size=20`,
+        `https://place-api.map.kakao.com/places/review/${id}?size=20`,
+        `https://place-api.map.kakao.com/places/visitor/${id}?size=20`,
       ];
       for (const u of urls) {
         try {
