@@ -99,14 +99,17 @@ export async function webCollect(query: string): Promise<CollectResult> {
     }
     const html = await res.text();
 
-    // Each result: result__a anchor (href + title) followed by a snippet.
+    // Each result: a result__a anchor (title, carries the href) followed by a
+    // result__snippet anchor. Capture the title anchor's full attribute list so
+    // href extraction doesn't depend on attribute ordering.
     const re =
-      /class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+      /<a\b([^>]*\bclass="result__a"[^>]*)>([\s\S]*?)<\/a>[\s\S]*?<a\b[^>]*\bclass="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
     const reviews: UnifiedReview[] = [];
     const seen = new Set<string>();
     let m: RegExpExecArray | null;
     while ((m = re.exec(html)) !== null && reviews.length < 20) {
-      const link = unwrap(m[1]);
+      const hrefMatch = m[1].match(/\bhref="([^"]+)"/);
+      const link = unwrap(hrefMatch ? hrefMatch[1] : "");
       const title = clean(m[2]);
       const snippet = clean(m[3]);
       const text = [title, snippet].filter(Boolean).join(" — ");
