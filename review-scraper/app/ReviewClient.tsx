@@ -52,7 +52,10 @@ const ALL_PLATFORMS: Platform[] = ["google", "kakao", "naver"];
 
 export default function ReviewClient() {
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<Platform[]>(ALL_PLATFORMS);
+  // Default to the platforms that work on this deployment. Google needs an
+  // API key; Naver needs a separate Playwright worker — users can toggle
+  // those on once configured.
+  const [selected, setSelected] = useState<Platform[]>(["kakao"]);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<CollectResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,7 +149,14 @@ export default function ReviewClient() {
 }
 
 function PlatformCard({ result }: { result: CollectResult }) {
-  const { platform, place, reviews, ok, error } = result;
+  const { platform, place, reviews, ok, error, errorCode } = result;
+  // "not configured yet" states aren't real failures — label them calmly.
+  const notReady = errorCode === "MISSING_KEY" || errorCode === "SCRAPER_DISABLED";
+  const statusLabel = ok
+    ? `${reviews.length}개 리뷰`
+    : notReady
+      ? "준비중"
+      : "실패";
   const rated = reviews.filter((r) => r.rating !== null) as (UnifiedReview & {
     rating: number;
   })[];
@@ -167,9 +177,7 @@ function PlatformCard({ result }: { result: CollectResult }) {
         {place?.name && (
           <span className="text-sm text-neutral-500">· {place.name}</span>
         )}
-        <span className="ml-auto text-xs text-neutral-400">
-          {ok ? `${reviews.length}개 리뷰` : "실패"}
-        </span>
+        <span className="ml-auto text-xs text-neutral-400">{statusLabel}</span>
       </div>
 
       {!ok && (
