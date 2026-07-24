@@ -19,41 +19,27 @@ export async function GET(req: Request) {
     const probes: unknown[] = [];
     if (place) {
       const id = place.placeId;
-      const ua =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
-      const trials: { url: string; headers: Record<string, string> }[] = [
-        // exact Accept: application/json (strict content negotiation)
-        { url: `https://place-api.map.kakao.com/places/panel3/${id}`, headers: { Accept: "application/json" } },
-        { url: `https://place-api.map.kakao.com/places/panel3/${id}`, headers: { Accept: "application/json", Referer: "https://place.map.kakao.com/", "User-Agent": ua } },
-        { url: `https://place-api.map.kakao.com/places/panel3/${id}`, headers: { Accept: "application/json", pf: "web", Referer: "https://place.map.kakao.com/" } },
-        { url: `https://place-api.map.kakao.com/reviews?placeId=${id}&order=RECOMMEND&onlyPhotoReview=false&page=1&size=20`, headers: { Accept: "application/json", Referer: "https://place.map.kakao.com/" } },
-        { url: `https://place-api.map.kakao.com/reviews?placeId=${id}&order=RECOMMEND&size=20`, headers: { Accept: "application/json", pf: "web", Referer: "https://place.map.kakao.com/" } },
-      ];
-      for (const t of trials) {
-        const u = t.url;
-        try {
-          const r = await fetch(u, { headers: t.headers });
-          const ct = r.headers.get("content-type") ?? "";
-          const body = await r.text();
-          let topKeys: string[] = [];
-          if (ct.includes("json")) {
-            try {
-              topKeys = Object.keys(JSON.parse(body));
-            } catch {
-              /* ignore */
-            }
-          }
-          probes.push({
-            url: u,
-            headers: t.headers,
-            status: r.status,
-            contentType: ct,
-            topKeys,
-            snippet: body.slice(0, 600),
-          });
-        } catch (e) {
-          probes.push({ url: u, headers: t.headers, error: String(e) });
-        }
+      try {
+        const r = await fetch(
+          `https://place-api.map.kakao.com/places/panel3/${id}`,
+          {
+            headers: {
+              Accept: "application/json",
+              pf: "web",
+              Referer: "https://place.map.kakao.com/",
+            },
+          },
+        );
+        const panel = (await r.json()) as Record<string, unknown>;
+        const km = panel.kakaomap_review as Record<string, unknown> | undefined;
+        probes.push({
+          status: r.status,
+          panelKeys: Object.keys(panel),
+          kakaomap_review_keys: km ? Object.keys(km) : [],
+          kakaomap_review_raw: JSON.stringify(km).slice(0, 1800),
+        });
+      } catch (e) {
+        probes.push({ error: String(e) });
       }
     }
     return NextResponse.json({ debug: true, place, probes });
