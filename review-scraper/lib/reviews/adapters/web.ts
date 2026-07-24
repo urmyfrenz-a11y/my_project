@@ -1,16 +1,18 @@
+import { config } from "../config";
 import type { CollectResult, PlaceSearchResult, UnifiedReview } from "../types";
-import { fetchWithTimeout } from "../util";
+import { fetchWithTimeout, toIsoDate } from "../util";
 
-// "인터넷 검색" source — completely key-free and LLM-free.
-// We fetch a search engine's HTML results server-side (no API key, no quota,
-// no billing) and treat each result (title + snippet) as a collected text item
-// that ships in the downloadable .txt alongside the map reviews.
+// "인터넷 검색" source — key-light and LLM-free.
 //
-// Engine order matters: Bing tolerates server-side/datacenter requests far
-// better than DuckDuckGo or Google, so we try it first and fall back to
-// DuckDuckGo. No engine needs a key and none meters usage, so there's no free
-// tier to exhaust. If they all fail (network/IP block), we surface a friendly
-// "try again later" message instead of a hard error.
+// Primary: Naver Search Open API (official JSON API). Bing/DuckDuckGo HTML
+// scraping is blocked from Vercel's datacenter IPs, so the reliable path is
+// Naver's Search API — free 25,000 calls/day, no overage billing, no bot
+// detection. It returns Korean blog/web results (real place reviews). Set
+// NAVER_SEARCH_CLIENT_ID/SECRET to enable it.
+//
+// Fallback: Bing then DuckDuckGo HTML (kept for local/other hosts; these
+// usually fail from Vercel but are harmless to try). If everything comes back
+// empty we surface a friendly message instead of a hard error.
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -22,14 +24,13 @@ function sourceName(hostOrUrl: string): string {
   try {
     h = new URL(hostOrUrl).hostname;
   } catch {
-    // Not a full URL (e.g. Bing cite "blog.naver.com › ..."): take the first
-    // domain-looking token.
     h = (hostOrUrl.match(/[a-z0-9.-]+\.[a-z]{2,}/i) ?? [""])[0];
   }
   h = h.replace(/^www\./, "").toLowerCase();
   const map: Record<string, string> = {
     "blog.naver.com": "네이버블로그",
     "cafe.naver.com": "네이버카페",
+    "post.naver.com": "네이버포스트",
     "tistory.com": "티스토리",
     "youtube.com": "유튜브",
     "instagram.com": "인스타그램",
@@ -66,6 +67,7 @@ function push(
   host: string,
   title: string,
   snippet: string,
+  createdAt?: string,
 ) {
   const text = [title, snippet].filter(Boolean).join(" — ");
   if (!text || seen.has(text)) return;
@@ -77,11 +79,67 @@ function push(
     author: sourceName(host),
     rating: null,
     text,
+    createdAt,
     source: "scrape",
   });
 }
 
-/** Bing organic results — the most datacenter-friendly engine. */
+interface NaverItem {
+  title?: string;
+  link?: string;
+  description?: string;
+  postdate?: string; // YYYYMMDD
+}
+
+/** Naver Search Open API — primary, reliable engine (needs free app keys). */
+async function naverApi(query: string): Promise<UnifiedReview[]> {
+  const { clientId, clientSecret } = config.naverSearch;
+  if (!clientId || !clientSecret) return [];
+  const headers = {
+    "X-Naver-Client-Id": clientId,
+    "X-Naver-Client-Secret": clientSecret,
+    Accept: "application/json",
+  };
+  const q = encodeURIComponent(query + " 후기 리뷰");
+  const out: UnifiedReview[] = [];
+  const seen = new Set<string>();
+  // Blog first (most review-like), then general web docs to top up.
+  for (const kind of ["blog", "webkr"]) {
+    if (out.length >= 20) break;
+    try {
+      const res = await fetchWithTimeout(
+        `https://openapi.naver.com/v1/search/${kind}.json?query=${q}&display=15&sort=sim`,
+        { headers },
+        10000,
+      );
+      if (!res.ok) continue;
+      const data = (await res.json()) as { items?: NaverItem[] };
+      for (const it of data.items ?? []) {
+        if (out.length >= 20) break;
+        const created =
+          it.postdate && /^\d{8}$/.test(it.postdate)
+            ? toIsoDate(
+                `${it.postdate.slice(0, 4)}-${it.postdate.slice(4, 6)}-${it.postdate.slice(6, 8)}`,
+              )
+            : undefined;
+        push(
+          out,
+          seen,
+          query,
+          it.link ?? "",
+          clean(it.title ?? ""),
+          clean(it.description ?? ""),
+          created,
+        );
+      }
+    } catch {
+      /* try next kind */
+    }
+  }
+  return out;
+}
+
+/** Bing organic results — best-effort fallback. */
 async function bing(query: string): Promise<UnifiedReview[]> {
   const url = `https://www.bing.com/search?q=${encodeURIComponent(
     query + " 후기 리뷰",
@@ -101,7 +159,6 @@ async function bing(query: string): Promise<UnifiedReview[]> {
   const html = await res.text();
   const out: UnifiedReview[] = [];
   const seen = new Set<string>();
-  // Split on each organic result container, parse fields inside the block.
   for (const b of html.split('class="b_algo"').slice(1)) {
     if (out.length >= 20) break;
     const title = clean((b.match(/<h2\b[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>/) ?? [])[1] ?? "");
@@ -117,7 +174,7 @@ async function bing(query: string): Promise<UnifiedReview[]> {
   return out;
 }
 
-/** DuckDuckGo HTML — fallback (often blocks datacenter IPs, hence second). */
+/** DuckDuckGo HTML — last-resort fallback. */
 async function duck(query: string): Promise<UnifiedReview[]> {
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(
     query + " 후기 리뷰",
@@ -165,7 +222,11 @@ export async function webCollect(
   query: string,
   _place?: PlaceSearchResult,
 ): Promise<CollectResult> {
-  const engines = [bing, duck];
+  const hasNaver = Boolean(
+    config.naverSearch.clientId && config.naverSearch.clientSecret,
+  );
+  const engines = hasNaver ? [naverApi, bing, duck] : [bing, duck];
+
   let reviews: UnifiedReview[] = [];
   for (const engine of engines) {
     try {
@@ -182,9 +243,10 @@ export async function webCollect(
       place: null,
       reviews: [],
       ok: false,
-      error:
-        "지금 인터넷 검색 결과를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.",
-      errorCode: "UPSTREAM_ERROR",
+      error: hasNaver
+        ? "지금 인터넷 검색 결과를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
+        : "인터넷 검색 준비중 — 네이버 검색 오픈API 키(NAVER_SEARCH_CLIENT_ID/SECRET)를 넣으면 활성화됩니다.",
+      errorCode: hasNaver ? "UPSTREAM_ERROR" : "MISSING_KEY",
     };
   }
 
