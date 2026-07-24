@@ -8,6 +8,17 @@ Vercel 앱은 이 워커를 HTTP로 호출만 합니다.
 Vercel(리뷰 사이트)  ──POST /collect {query}──▶  이 워커(Playwright) ──▶ 네이버
 ```
 
+## ⚠️ 중요 — 반드시 "한국 가정용(residential) IP"에서 실행할 것
+네이버는 **데이터센터 IP(AWS/Render 등)를 봇으로 감지해 CAPTCHA로 차단**합니다
+(응답에 `ncaptcha` / `place: null`). 즉 이 워커를 클라우드(Render 등)에 올리면
+네이버가 데이터를 주지 않습니다. **한국 가정/사무실 IP를 가진 머신**(집 PC,
+전용 서버 등)에서 실행해야 정상 동작합니다.
+
+권장 구성: 전용 PC에서 이 워커 실행 → 무료 터널(Cloudflare Tunnel:
+`cloudflared tunnel --url http://localhost:3000`)로 외부 주소 생성 →
+그 주소를 Vercel `NAVER_WORKER_URL` 에 연결. (카카오는 Vercel에서 상시
+동작하므로 워커가 꺼져 있어도 무관 — 네이버만 워커에 의존.)
+
 ## API
 - `GET  /health` → `{ ok: true }`
 - `POST /collect` body `{ "query": "가게 이름" }` → `{ place, reviews }`
