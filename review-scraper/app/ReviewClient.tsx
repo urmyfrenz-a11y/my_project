@@ -51,6 +51,15 @@ function avgOf(reviews: UnifiedReview[]): number | null {
   );
 }
 
+/** Newest-first by createdAt; entries without a valid date sink to the end. */
+function newestFirst(reviews: UnifiedReview[]): UnifiedReview[] {
+  const t = (r: UnifiedReview) => {
+    const ms = r.createdAt ? Date.parse(r.createdAt) : NaN;
+    return Number.isNaN(ms) ? -Infinity : ms;
+  };
+  return [...reviews].sort((a, b) => t(b) - t(a));
+}
+
 function fmtDate(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -117,7 +126,11 @@ type Phase = "idle" | "searching" | "picking" | "notfound" | "collecting" | "don
 
 export default function ReviewClient() {
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<Platform[]>(["kakao"]);
+  const [selected, setSelected] = useState<Platform[]>([
+    "kakao",
+    "web",
+    "naver",
+  ]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [candidates, setCandidates] = useState<PlaceSearchResult[]>([]);
   const [chosen, setChosen] = useState<PlaceSearchResult | null>(null);
@@ -233,7 +246,7 @@ export default function ReviewClient() {
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 px-1">
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 px-1">
           <span className="text-xs text-muted">수집 대상</span>
           {ALL_PLATFORMS.map((p) => {
             const active = selected.includes(p);
@@ -241,17 +254,28 @@ export default function ReviewClient() {
               <button
                 key={p}
                 type="button"
+                role="checkbox"
+                aria-checked={active}
                 onClick={() => togglePlatform(p)}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                  active
-                    ? META[p].solid + " shadow-sm"
-                    : "border-line bg-card text-muted hover:text-foreground"
-                }`}
+                className="inline-flex items-center gap-2 text-sm transition"
               >
                 <span
-                  className={`h-1.5 w-1.5 rounded-full ${active ? "bg-white/90" : META[p].dot}`}
-                />
-                {META[p].label}
+                  className={`flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border transition ${
+                    active
+                      ? "border-indigo-600 bg-indigo-600 text-white"
+                      : "border-neutral-300 bg-card dark:border-neutral-600"
+                  }`}
+                >
+                  {active && <CheckIcon />}
+                </span>
+                <span className={`h-1.5 w-1.5 rounded-full ${META[p].dot}`} />
+                <span
+                  className={
+                    active ? "font-medium" : "text-muted"
+                  }
+                >
+                  {META[p].label}
+                </span>
               </button>
             );
           })}
@@ -519,17 +543,19 @@ function PlatformCard({
             </div>
           )}
 
-          {/* review preview */}
+          {/* review preview — newest 5 */}
           {reviews.length > 0 ? (
             <>
               <ul className="divide-y divide-line">
-                {reviews.slice(0, 10).map((r) => (
-                  <ReviewItem key={r.reviewId} r={r} />
-                ))}
+                {newestFirst(reviews)
+                  .slice(0, 5)
+                  .map((r) => (
+                    <ReviewItem key={r.reviewId} r={r} />
+                  ))}
               </ul>
-              {reviews.length > 10 && (
+              {reviews.length > 5 && (
                 <p className="pt-3 text-center text-xs text-muted">
-                  미리보기 10개 · 전체 {reviews.length}개는 .txt 다운로드로
+                  최신 미리보기 5개 · 전체 {reviews.length}개는 .txt 다운로드로
                   확인하세요
                 </p>
               )}
@@ -670,6 +696,20 @@ function SearchIcon({ className }: { className?: string }) {
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3">
+      <path
+        d="m5 12 5 5 9-10"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
