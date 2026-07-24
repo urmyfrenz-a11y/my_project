@@ -19,6 +19,19 @@ Vercel, Google Cloud, Kakao Developers 등 웹 콘솔 작업을 안내할 때는
 - `naver-worker/` = **네이버 리뷰 Playwright 워커**. Vercel 서버리스는 브라우저를
   못 돌리므로 별도(Render/Railway) 배포. `review-scraper` 는 `NAVER_WORKER_URL`
   로 이 워커를 HTTP 호출한다.
+- `kakao-worker/` = **카카오 리뷰 Playwright 워커**. Render 무료(Docker, Root
+  Directory=`kakao-worker`)에 배포됨. 카카오는 데이터센터 IP를 안 막아 클라우드에서
+  동작. `review-scraper` 는 `KAKAO_WORKER_URL`/`KAKAO_WORKER_TOKEN` 으로 호출.
+  워커 없으면 panel3(~7개)로 폴백.
+
+## '인터넷 검색' = 네이버 검색 오픈API
+`review-scraper` 의 "네이버 검색" 소스는 네이버 검색 오픈API(무료 25,000건/일,
+과금 없음)를 쓴다. 환경변수 `NAVER_SEARCH_CLIENT_ID`/`NAVER_SEARCH_CLIENT_SECRET`.
+(Bing/DuckDuckGo 스크래핑은 Vercel 데이터센터 IP가 차단돼 폴백만 하고 실동작 안 함.)
+
+## 배포 트리거(중요)
+`review-scraper` (Vercel map-review)와 두 워커(Render) 모두 **`main` 브랜치 push
+시 자동 배포**된다. 즉 저장소 어디를 커밋해도 Vercel/Render가 다시 빌드된다.
 
 ## 주요 콘솔 직접 링크 (map-review 프로젝트)
 - 프로젝트 홈: https://vercel.com/hichul-kim-s-projects/map-review
@@ -26,3 +39,14 @@ Vercel, Google Cloud, Kakao Developers 등 웹 콘솔 작업을 안내할 때는
 - 환경변수: https://vercel.com/hichul-kim-s-projects/map-review/settings/environment-variables
 - 배포 보호(공개 전환): https://vercel.com/hichul-kim-s-projects/map-review/settings/deployment-protection
 - 도메인: https://vercel.com/hichul-kim-s-projects/map-review/settings/domains
+
+## Render 워커 직접 링크
+- **kakao-worker** (Service ID `srv-d9hockl8nd3s73f1d7ig`, URL
+  `https://kakao-review-worker.onrender.com`)
+  - Deploys(재배포/Manual Deploy): https://dashboard.render.com/web/srv-d9hockl8nd3s73f1d7ig/deploys
+  - Logs: https://dashboard.render.com/web/srv-d9hockl8nd3s73f1d7ig/logs
+  - Environment(환경변수): https://dashboard.render.com/web/srv-d9hockl8nd3s73f1d7ig/env
+  - Settings: https://dashboard.render.com/web/srv-d9hockl8nd3s73f1d7ig/settings
+  - 진단: `https://kakao-review-worker.onrender.com/debug?placeId=<id>` (JSON)
+- Render 대시보드 홈: https://dashboard.render.com/
+- 새 Web Service: https://dashboard.render.com/select-repo?type=web
