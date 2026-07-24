@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -9,15 +9,19 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "장소 리뷰 수집기",
+  title: "장소 리뷰 수집기 — 구글·카카오·네이버 리뷰 한눈에",
   description:
-    "구글맵 · 카카오맵 · 네이버 플레이스에서 장소를 검색하면 리뷰를 통합 스키마로 수집합니다.",
+    "구글맵 · 카카오맵 · 네이버 플레이스의 리뷰를 검색 한 번으로 통합 수집해 별점과 함께 보여드립니다.",
   openGraph: {
     title: "장소 리뷰 수집기",
-    description: "구글맵 · 카카오맵 · 네이버 플레이스 리뷰를 한 곳에서 수집",
+    description: "구글 · 카카오 · 네이버 리뷰를 한 곳에서 통합 수집",
     locale: "ko_KR",
     type: "website",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#6366f1",
 };
 
 export default function RootLayout({
@@ -28,7 +32,7 @@ export default function RootLayout({
       lang="ko"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full">{children}</body>
     </html>
   );
 }
