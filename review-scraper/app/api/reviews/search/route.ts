@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { searchPlaces, collectReviews } from "@/lib/reviews";
+import { searchPlaces } from "@/lib/reviews";
 import { kakaoSearchPlaces } from "@/lib/reviews/adapters/kakao";
 
 export const runtime = "nodejs";
@@ -11,47 +11,56 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "q is required" }, { status: 400 });
   }
 
-  // TEMP diagnostic channel (GET-accessible) to inspect Kakao's raw review
-  // response shape and verify the collect path. Remove after verification.
+  // TEMP diagnostic: probe candidate Kakao review endpoints to find the
+  // current one (the old place.map.kakao.com/main/v/{id} now 404s).
   if (url.searchParams.get("debug") === "kakao") {
     const cands = await kakaoSearchPlaces(q);
     const place = cands[0] ?? null;
-    let raw: { status: number; commentKeys: string[]; counts: Record<string, number>; sample: unknown } | null = null;
+    const probes: unknown[] = [];
     if (place) {
-      const r = await fetch(`https://place.map.kakao.com/main/v/${place.placeId}`, {
-        headers: {
-          Referer: `https://place.map.kakao.com/${place.placeId}`,
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-          Accept: "application/json, text/plain, */*",
-        },
-      });
-      let j: unknown = null;
-      try {
-        j = await r.json();
-      } catch {
-        j = null;
+      const id = place.placeId;
+      const candidateUrls = [
+        `https://place-api.map.kakao.com/places/panel3/${id}`,
+        `https://place-api.map.kakao.com/places/main/${id}`,
+        `https://place-api.map.kakao.com/reviews?placeId=${id}&order=RECOMMEND&onlyPhotoReview=false&page=1&size=20`,
+        `https://place.map.kakao.com/main/v/${id}`,
+        `https://place.map.kakao.com/m/main/v/${id}`,
+        `https://comment.map.kakao.com/api/comment/list/${id}`,
+      ];
+      for (const u of candidateUrls) {
+        try {
+          const r = await fetch(u, {
+            headers: {
+              Referer: "https://map.kakao.com/",
+              Origin: "https://map.kakao.com",
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+              Accept: "application/json, text/plain, */*",
+            },
+          });
+          const ct = r.headers.get("content-type") ?? "";
+          const body = await r.text();
+          let topKeys: string[] = [];
+          if (ct.includes("json")) {
+            try {
+              topKeys = Object.keys(JSON.parse(body));
+            } catch {
+              /* ignore */
+            }
+          }
+          probes.push({
+            url: u,
+            status: r.status,
+            contentType: ct,
+            topKeys,
+            snippet: body.slice(0, 600),
+          });
+        } catch (e) {
+          probes.push({ url: u, error: String(e) });
+        }
       }
-      const c = (j as { comment?: Record<string, unknown> })?.comment ?? {};
-      raw = {
-        status: r.status,
-        commentKeys: Object.keys(c),
-        counts: {
-          kamapComntList: Array.isArray((c as { kamapComntList?: unknown[] }).kamapComntList)
-            ? (c as { kamapComntList: unknown[] }).kamapComntList.length
-            : -1,
-          list: Array.isArray((c as { list?: unknown[] }).list)
-            ? (c as { list: unknown[] }).list.length
-            : -1,
-        },
-        sample:
-          (c as { kamapComntList?: unknown[] }).kamapComntList?.[0] ??
-          (c as { list?: unknown[] }).list?.[0] ??
-          null,
-      };
     }
-    const collected = await collectReviews(q, ["kakao"]);
-    return NextResponse.json({ debug: true, place, raw, collected });
+    return NextResponse.json({ debug: true, place, probes });
   }
 
   const places = await searchPlaces(q);
