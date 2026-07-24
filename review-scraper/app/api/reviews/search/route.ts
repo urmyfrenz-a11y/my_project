@@ -51,37 +51,30 @@ export async function GET(req: Request) {
       } catch (e) {
         panel = { error: String(e) };
       }
-      const urls = [
-        `https://place-api.map.kakao.com/places/kakaomap_review/${id}?order=RECENT&onlyPhotoReview=false&page=1&size=20`,
-        `https://place-api.map.kakao.com/places/blog_review/${id}?page=1&size=20`,
-        `https://place-api.map.kakao.com/places/kakaomap_review/${id}?page=1&size=20&onlyPhotoReview=false`,
+      const paramSets = [
+        "?page=2&page_size=5",
+        "?page=2&size=5",
+        "?blog_review_page=2&blog_review_page_size=5",
+        "?blogReviewPage=2&blogReviewSize=5",
       ];
-      for (const u of urls) {
+      for (const ps of paramSets) {
         try {
-          const r = await fetch(u, { headers: H });
-          const ct = r.headers.get("content-type") ?? "";
-          const body = await r.text();
-          let keys: string[] = [];
-          let reviewCount = -1;
-          if (ct.includes("json")) {
-            try {
-              const j = JSON.parse(body);
-              keys = Object.keys(j);
-              const revs = j.reviews ?? j.list ?? j.items;
-              reviewCount = Array.isArray(revs) ? revs.length : -1;
-            } catch {
-              /* ignore */
-            }
-          }
+          const r = await fetch(
+            `https://place-api.map.kakao.com/places/panel3/${id}${ps}`,
+            { headers: H },
+          );
+          const j = (await r.json()) as Record<string, any>;
+          const br = j.blog_review ?? {};
           others.push({
-            url: u,
+            params: ps,
             status: r.status,
-            keys,
-            reviewCount,
-            snippet: body.slice(0, 160),
+            requested_page: br.requested_page,
+            requested_page_size: br.requested_page_size,
+            firstReviewId: br.reviews?.[0]?.review_id,
+            reviewCount: Array.isArray(br.reviews) ? br.reviews.length : -1,
           });
         } catch (e) {
-          others.push({ url: u, error: String(e) });
+          others.push({ params: ps, error: String(e) });
         }
       }
     }
