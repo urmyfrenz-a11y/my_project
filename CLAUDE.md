@@ -19,10 +19,12 @@ Vercel, Google Cloud, Kakao Developers 등 웹 콘솔 작업을 안내할 때는
 - `naver-worker/` = **네이버 리뷰 Playwright 워커**. Vercel 서버리스는 브라우저를
   못 돌리므로 별도(Render/Railway) 배포. `review-scraper` 는 `NAVER_WORKER_URL`
   로 이 워커를 HTTP 호출한다.
-- `kakao-worker/` = **카카오 리뷰 Playwright 워커**. Render 무료(Docker, Root
-  Directory=`kakao-worker`)에 배포됨. 카카오는 데이터센터 IP를 안 막아 클라우드에서
-  동작. `review-scraper` 는 `KAKAO_WORKER_URL`/`KAKAO_WORKER_TOKEN` 으로 호출.
-  워커 없으면 panel3(~7개)로 폴백.
+- `kakao-worker/` = **카카오 리뷰 Playwright 워커 (폐기/미사용)**. Render에 배포는
+  돼 있으나 `review-scraper` 는 더 이상 호출하지 않는다. 이유: 카카오 place 페이지는
+  리뷰 XHR/내장데이터가 없고, 지도앱 UI는 무료 인프라에서 무겁고 불안정하며,
+  카카오의 많은 리뷰는 대부분 **네이버 검색과 중복되는 외부 블로그 링크**라 실익이
+  적음. **카카오는 panel3(별점+블로그, ~7개)만 사용.** (Vercel의 KAKAO_WORKER_URL/
+  KAKAO_WORKER_TOKEN 환경변수와 Render kakao-worker 서비스는 지워도 됨 — 선택.)
 
 ## '인터넷 검색' = 네이버 검색 오픈API
 `review-scraper` 의 "네이버 검색" 소스는 네이버 검색 오픈API(무료 25,000건/일,

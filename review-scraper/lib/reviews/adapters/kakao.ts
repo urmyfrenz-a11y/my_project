@@ -149,73 +149,13 @@ function arr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
-interface KakaoWorkerResponse {
-  reviews?: Array<{
-    reviewId?: string | number;
-    author?: string;
-    rating?: number | null;
-    text?: string;
-    createdAt?: string;
-    likeCount?: number;
-  }>;
-  error?: string;
-}
-
-/**
- * Full-volume path: a Playwright worker (see /kakao-worker) opens the real
- * Kakao place page, scrolls the review tab and rides the paginated review
- * endpoint to collect 100+ reviews. Returns null when the worker isn't
- * configured or fails, so the caller can fall back to the panel payload.
- */
-async function kakaoGetReviewsWorker(
-  placeId: string,
-): Promise<UnifiedReview[] | null> {
-  const base = config.kakao.workerUrl.replace(/\/$/, "");
-  if (!base) return null;
-  try {
-    const res = await fetchWithTimeout(
-      `${base}/collect`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.kakao.workerToken
-            ? { "x-worker-token": config.kakao.workerToken }
-            : {}),
-        },
-        body: JSON.stringify({ placeId }),
-      },
-      55000,
-    );
-    if (!res.ok) return null;
-    const data = (await res.json()) as KakaoWorkerResponse;
-    if (!Array.isArray(data.reviews)) return null;
-    const out: UnifiedReview[] = [];
-    for (const r of data.reviews) {
-      const text = String(r.text ?? "").trim();
-      if (!text) continue;
-      out.push({
-        platform: "kakao",
-        placeId,
-        reviewId: String(r.reviewId ?? `k:${out.length}`),
-        author: r.author === "블로그" ? "블로그" : anonymizeAuthor(r.author),
-        rating: normalizeRating(r.rating),
-        text,
-        createdAt: toIsoDate(r.createdAt),
-        likeCount: r.likeCount,
-        source: "scrape",
-      });
-    }
-    return out;
-  } catch {
-    return null;
-  }
-}
-
-/** Worker first (100+), panel fallback (~7). */
+// NOTE: A Playwright worker was trialed to page past Kakao's ~7-review cap,
+// but Kakao's place page ships no review XHR and the map-app UI is too heavy to
+// drive reliably on free infra — and Kakao's high review counts are mostly
+// links to external blog posts that the "네이버 검색" source already collects.
+// So we use the fast panel payload (star + blog, ~7) and rely on Naver search
+// for volume.
 async function kakaoGetReviews(placeId: string): Promise<UnifiedReview[]> {
-  const viaWorker = await kakaoGetReviewsWorker(placeId);
-  if (viaWorker && viaWorker.length > 0) return viaWorker;
   return kakaoGetReviewsPanel(placeId);
 }
 
