@@ -39,8 +39,8 @@ export default function Home() {
             </span>
           </h1>
           <p className="mx-auto mt-3.5 max-w-lg text-[15px] leading-relaxed text-muted sm:text-base">
-            구글맵 · 카카오맵 · 네이버 플레이스의 리뷰를 검색 한 번으로 통합해
-            별점과 함께 보여드립니다.
+            구글 검색 · 카카오맵 · 네이버 플레이스의 결과를 검색 한 번으로 모아
+            감성 분석과 핵심 인사이트까지 보여드립니다.
           </p>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-2">

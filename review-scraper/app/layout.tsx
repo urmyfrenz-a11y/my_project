@@ -11,7 +11,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "장소 리뷰 수집기 — 구글·카카오·네이버 리뷰 한눈에",
   description:
-    "구글맵 · 카카오맵 · 네이버 플레이스의 리뷰를 검색 한 번으로 통합 수집해 별점과 함께 보여드립니다.",
+    "구글 검색 · 카카오맵 · 네이버 플레이스의 리뷰를 검색 한 번으로 모아 감성 분석과 핵심 인사이트를 보여드립니다.",
   openGraph: {
     title: "장소 리뷰 수집기",
     description: "구글 · 카카오 · 네이버 리뷰를 한 곳에서 통합 수집",
