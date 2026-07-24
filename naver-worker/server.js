@@ -72,45 +72,67 @@ async function scrapeNaver(query) {
     });
     const page = await ctx.newPage();
 
-    // 1) resolve place id
-    await page.goto(
-      `https://m.place.naver.com/place/list?query=${encodeURIComponent(query)}`,
-      { waitUntil: "domcontentloaded", timeout: 20000 },
-    );
+    // 1) resolve place id — try Naver's search API first (the SPA list page
+    //    stalls at "로딩중" from datacenter IPs), then fall back to DOM.
     let placeId = "";
     let placeName = query;
-    const finalUrl = page.url();
-    const m = finalUrl.match(/place\/(\d+)/) ?? finalUrl.match(/(\d{6,})/);
-    if (m) placeId = m[1];
+    let diag = "";
+
+    // Warm up cookies/context first.
+    await page
+      .goto("https://m.place.naver.com/", {
+        waitUntil: "domcontentloaded",
+        timeout: 15000,
+      })
+      .catch(() => {});
+    try {
+      const apiUrl = `https://map.naver.com/p/api/search/allSearch?query=${encodeURIComponent(
+        query,
+      )}&type=all&searchCoord=&boundary=`;
+      const api = await page.request.get(apiUrl, {
+        headers: { Referer: "https://map.naver.com/", Accept: "application/json" },
+      });
+      diag = `allSearch=${api.status()}`;
+      if (api.ok()) {
+        const j = await api.json();
+        const list = j?.result?.place?.list;
+        const first = Array.isArray(list) ? list[0] : null;
+        if (first?.id) {
+          placeId = String(first.id);
+          placeName = first.name || query;
+        } else {
+          diag += ` placeList=${Array.isArray(list) ? list.length : "none"}`;
+        }
+      }
+    } catch (e) {
+      diag = `allSearch-err=${String(e).slice(0, 100)}`;
+    }
+
+    // Fallback: SPA list page.
     if (!placeId) {
-      // The list is a client-rendered SPA ("로딩중" until JS populates it),
-      // so wait for the first place link to actually appear before reading it.
       await page
-        .waitForSelector('a[href*="/place/"]', { timeout: 9000 })
+        .goto(
+          `https://m.place.naver.com/place/list?query=${encodeURIComponent(query)}`,
+          { waitUntil: "domcontentloaded", timeout: 20000 },
+        )
         .catch(() => {});
-      const href = await page
-        .locator('a[href*="/place/"]')
-        .first()
-        .getAttribute("href")
-        .catch(() => null);
-      const mm = href?.match(/place\/(\d+)/);
-      if (mm) placeId = mm[1];
+      const m = page.url().match(/place\/(\d+)/);
+      if (m) placeId = m[1];
+      if (!placeId) {
+        await page
+          .waitForSelector('a[href*="/place/"]', { timeout: 9000 })
+          .catch(() => {});
+        const href = await page
+          .locator('a[href*="/place/"]')
+          .first()
+          .getAttribute("href")
+          .catch(() => null);
+        const mm = href?.match(/place\/(\d+)/);
+        if (mm) placeId = mm[1];
+      }
     }
-    // A single exact match may have redirected straight to the place page.
+
     if (!placeId) {
-      const m2 = page.url().match(/place\/(\d+)/);
-      if (m2) placeId = m2[1];
-    }
-    if (!placeId) {
-      // Diagnostic: understand WHY (anti-bot block vs. changed layout vs. empty).
-      let title = "";
-      try {
-        title = await page.title();
-      } catch {}
-      const anchorCount = await page
-        .locator('a[href*="/place/"]')
-        .count()
-        .catch(() => -1);
       const bodyText = (
         await page
           .locator("body")
@@ -118,11 +140,11 @@ async function scrapeNaver(query) {
           .catch(() => "")
       )
         .replace(/\s+/g, " ")
-        .slice(0, 400);
+        .slice(0, 300);
       return {
         place: null,
         reviews: [],
-        error: `장소를 찾지 못했습니다. | url=${page.url()} | title=${title} | anchors=${anchorCount} | body=${bodyText}`,
+        error: `장소를 찾지 못했습니다. | ${diag} | url=${page.url()} | body=${bodyText}`,
       };
     }
 
