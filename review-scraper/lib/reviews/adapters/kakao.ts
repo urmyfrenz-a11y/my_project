@@ -73,9 +73,12 @@ async function kakaoGetReviews(placeId: string): Promise<UnifiedReview[]> {
   } catch {
     return [];
   }
-  // Known shape: { comment: { list: [{ contents, point, username, date, ... }] } }
-  const list =
-    (data as { comment?: { list?: unknown[] } })?.comment?.list ?? [];
+  // Kakao's current shape puts visitor reviews under comment.kamapComntList;
+  // older responses used comment.list. Handle both.
+  const comment = (data as {
+    comment?: { kamapComntList?: unknown[]; list?: unknown[] };
+  })?.comment;
+  const list = comment?.kamapComntList ?? comment?.list ?? [];
   const reviews: UnifiedReview[] = [];
   for (const item of Array.isArray(list) ? list : []) {
     const r = item as {
