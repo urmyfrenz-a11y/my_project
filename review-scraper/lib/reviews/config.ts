@@ -7,11 +7,10 @@ export const config = {
     restKey: process.env.KAKAO_REST_API_KEY ?? "",
   },
   naver: {
-    // Playwright can't run on Vercel serverless; gate it explicitly so the
-    // rest of the site deploys and works even when the scraper is off.
-    enabled: process.env.NAVER_SCRAPER_ENABLED === "true",
-    // Optional: point at the pre-installed Chromium in this environment.
-    chromiumPath: process.env.PLAYWRIGHT_CHROMIUM_PATH ?? "",
-    maxReviews: Number(process.env.NAVER_MAX_REVIEWS ?? "40"),
+    // Naver needs a real browser, which can't run on Vercel serverless.
+    // A dedicated Playwright worker (see /naver-worker) does the scraping and
+    // this app calls it over HTTP. Set NAVER_WORKER_URL to enable Naver.
+    workerUrl: process.env.NAVER_WORKER_URL ?? "",
+    workerToken: process.env.NAVER_WORKER_TOKEN ?? "",
   },
 } as const;
