@@ -24,3 +24,5 @@ export async function GET(req: Request) {
     );
   }
 }
+
+// deploy check after git reconnect
