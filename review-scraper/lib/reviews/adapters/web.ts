@@ -18,6 +18,10 @@ const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
+// How many web results to keep per search. Naver's API allows up to 100 per
+// call (and ~1,000 via pagination); this is just where we cap collection.
+const MAX_RESULTS = 100;
+
 /** Map a hostname (or Bing <cite> text) to a friendly Korean source label. */
 function sourceName(hostOrUrl: string): string {
   let h = hostOrUrl;
@@ -105,17 +109,17 @@ async function naverApi(query: string): Promise<UnifiedReview[]> {
   const seen = new Set<string>();
   // Blog first (most review-like), then general web docs to top up.
   for (const kind of ["blog", "webkr"]) {
-    if (out.length >= 20) break;
+    if (out.length >= MAX_RESULTS) break;
     try {
       const res = await fetchWithTimeout(
-        `https://openapi.naver.com/v1/search/${kind}.json?query=${q}&display=15&sort=sim`,
+        `https://openapi.naver.com/v1/search/${kind}.json?query=${q}&display=100&sort=sim`,
         { headers },
         10000,
       );
       if (!res.ok) continue;
       const data = (await res.json()) as { items?: NaverItem[] };
       for (const it of data.items ?? []) {
-        if (out.length >= 20) break;
+        if (out.length >= MAX_RESULTS) break;
         const created =
           it.postdate && /^\d{8}$/.test(it.postdate)
             ? toIsoDate(
@@ -160,7 +164,7 @@ async function bing(query: string): Promise<UnifiedReview[]> {
   const out: UnifiedReview[] = [];
   const seen = new Set<string>();
   for (const b of html.split('class="b_algo"').slice(1)) {
-    if (out.length >= 20) break;
+    if (out.length >= MAX_RESULTS) break;
     const title = clean((b.match(/<h2\b[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>/) ?? [])[1] ?? "");
     const cite = clean((b.match(/<cite\b[^>]*>([\s\S]*?)<\/cite>/) ?? [])[1] ?? "");
     const href = (b.match(/<h2\b[\s\S]*?<a\b[^>]*href="([^"]+)"/) ?? [])[1] ?? "";
@@ -197,7 +201,7 @@ async function duck(query: string): Promise<UnifiedReview[]> {
   const re =
     /<a\b([^>]*\bclass="result__a"[^>]*)>([\s\S]*?)<\/a>[\s\S]*?<a\b[^>]*\bclass="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null && out.length < 20) {
+  while ((m = re.exec(html)) !== null && out.length < MAX_RESULTS) {
     const hrefRaw = (m[1].match(/\bhref="([^"]+)"/) ?? [])[1] ?? "";
     const uddg = hrefRaw.match(/[?&]uddg=([^&]+)/);
     let link = hrefRaw;
