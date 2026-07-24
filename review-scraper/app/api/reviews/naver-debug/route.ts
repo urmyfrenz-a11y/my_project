@@ -5,6 +5,7 @@ import { naverDebug } from "@/lib/reviews/adapters/naver";
 // Naver Place review page, so we can refine the HTML parser against real
 // markup. Remove once the parser is confirmed working.
 //   /api/reviews/naver-debug?q=스타벅스 뉴코아강남점
+// (prod build trigger: 새 SHA로 프로덕션 재빌드 — 환경변수 반영)
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
