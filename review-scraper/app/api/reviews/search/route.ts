@@ -16,53 +16,54 @@ export async function GET(req: Request) {
   if (url.searchParams.get("debug") === "kakaorev") {
     const cands = await kakaoSearchPlaces(q);
     const place = cands[0] ?? null;
-    const probes: unknown[] = [];
+    const H = {
+      Accept: "application/json",
+      pf: "web",
+      Referer: "https://place.map.kakao.com/",
+    };
+    let panel: unknown = null;
+    const others: unknown[] = [];
     if (place) {
       const id = place.placeId;
-      const H = {
-        Accept: "application/json",
-        pf: "web",
-        Referer: "https://place.map.kakao.com/",
-      };
-      const urls = [
-        `https://place-api.map.kakao.com/places/kakaomap_reviews/${id}?order=RECENT&onlyPhotoReview=false&size=20`,
-        `https://place-api.map.kakao.com/places/kakaomap_reviews/${id}?order=RECOMMEND&size=20&page=1`,
-        `https://place-api.map.kakao.com/places/kakaomapReviews/${id}?size=20`,
-        `https://place-api.map.kakao.com/places/reviews/${id}?order=RECENT&size=20`,
-        `https://place-api.map.kakao.com/places/review/${id}?size=20`,
-        `https://place-api.map.kakao.com/places/visitor/${id}?size=20`,
-      ];
-      for (const u of urls) {
+      try {
+        const r = await fetch(
+          `https://place-api.map.kakao.com/places/panel3/${id}`,
+          { headers: H },
+        );
+        const j = (await r.json()) as Record<string, any>;
+        const km = j.kakaomap_review ?? {};
+        panel = {
+          kakaomap_review: {
+            reviews: Array.isArray(km.reviews) ? km.reviews.length : -1,
+            review_count: km.score_set?.review_count,
+            has_next: km.has_next,
+            keys: Object.keys(km),
+          },
+          blog_review: {
+            keys: Object.keys(j.blog_review ?? {}),
+            snippet: JSON.stringify(j.blog_review).slice(0, 200),
+          },
+          visitor: {
+            keys: Object.keys(j.visitor ?? {}),
+            snippet: JSON.stringify(j.visitor).slice(0, 300),
+          },
+        };
+      } catch (e) {
+        panel = { error: String(e) };
+      }
+      for (const t of ["main", "panel", "panel4", "panel5", "panel2"]) {
         try {
-          const r = await fetch(u, { headers: H });
-          const ct = r.headers.get("content-type") ?? "";
-          const body = await r.text();
-          let keys: string[] = [];
-          let reviewCount = -1;
-          if (ct.includes("json")) {
-            try {
-              const j = JSON.parse(body);
-              keys = Object.keys(j);
-              const revs =
-                j.reviews ?? j.kakaomap_review?.reviews ?? j.list ?? j.items;
-              reviewCount = Array.isArray(revs) ? revs.length : -1;
-            } catch {
-              /* ignore */
-            }
-          }
-          probes.push({
-            url: u,
-            status: r.status,
-            keys,
-            reviewCount,
-            snippet: body.slice(0, 220),
-          });
+          const r = await fetch(
+            `https://place-api.map.kakao.com/places/${t}/${id}`,
+            { headers: H },
+          );
+          others.push({ type: t, status: r.status });
         } catch (e) {
-          probes.push({ url: u, error: String(e) });
+          others.push({ type: t, error: String(e) });
         }
       }
     }
-    return NextResponse.json({ debug: "kakaorev", place, probes });
+    return NextResponse.json({ debug: "kakaorev", place, panel, others });
   }
 
   const places = await searchPlaces(q);
