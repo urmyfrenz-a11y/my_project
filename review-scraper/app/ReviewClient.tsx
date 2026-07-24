@@ -126,11 +126,8 @@ type Phase = "idle" | "searching" | "picking" | "notfound" | "collecting" | "don
 
 export default function ReviewClient() {
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<Platform[]>([
-    "kakao",
-    "web",
-    "naver",
-  ]);
+  // 네이버 플레이스는 브라우저 확장으로 따로 수집 → 기본 언체크.
+  const [selected, setSelected] = useState<Platform[]>(["kakao", "web"]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [candidates, setCandidates] = useState<PlaceSearchResult[]>([]);
   const [chosen, setChosen] = useState<PlaceSearchResult | null>(null);
@@ -182,13 +179,21 @@ export default function ReviewClient() {
     setPhase("collecting");
     setError(null);
     setResults(null);
+    // 네이버 플레이스 방문자 리뷰는 서버(데이터센터 IP)가 막혀 브라우저 확장으로
+    // 직접 수집합니다. 서버에 보내지 않고, 결과 화면에서 안내 카드만 보여줍니다.
+    const backendPlatforms = selected.filter((p) => p !== "naver");
     try {
+      if (backendPlatforms.length === 0) {
+        setResults([]);
+        setPhase("done");
+        return;
+      }
       const res = await fetch("/api/reviews/collect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: place.name,
-          platforms: selected,
+          platforms: backendPlatforms,
           place,
         }),
       });
@@ -271,6 +276,9 @@ export default function ReviewClient() {
                 <span className={active ? "font-medium" : "text-muted"}>
                   {META[p].label}
                 </span>
+                {p === "naver" && (
+                  <span className="text-[11px] text-muted">(확장 프로그램)</span>
+                )}
               </button>
             );
           })}
@@ -355,9 +363,86 @@ export default function ReviewClient() {
               query={chosen?.name ?? query}
             />
           ))}
+
+          {selected.includes("naver") && (
+            <NaverExtensionGuide placeName={chosen?.name ?? query} />
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function NaverExtensionGuide({ placeName }: { placeName: string }) {
+  const naverUrl = `https://map.naver.com/p/search/${encodeURIComponent(placeName)}`;
+  return (
+    <section className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/60 shadow-sm dark:border-emerald-900/50 dark:bg-emerald-950/20">
+      <div className="flex items-center gap-2.5 border-b border-emerald-200/70 px-5 py-3.5 dark:border-emerald-900/50">
+        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+        <span className="text-sm font-semibold">네이버 플레이스</span>
+        <span className="ml-auto rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+          확장 프로그램으로 수집
+        </span>
+      </div>
+      <div className="px-5 py-4 text-sm leading-relaxed">
+        <p className="text-muted">
+          네이버는 서버(데이터센터 IP)로는 리뷰를 막습니다. 그래서 네이버 플레이스
+          방문자 리뷰는 <b className="text-foreground">본인 브라우저의 확장
+          프로그램</b>으로 직접 수집합니다. (한국 IP라 안 막혀요.)
+        </p>
+        <ol className="mt-3 space-y-2">
+          {[
+            <>
+              확장 설치:{" "}
+              <a
+                href="https://chromewebstore.google.com/search/web%20scraper"
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-emerald-700 underline dark:text-emerald-400"
+              >
+                Web Scraper
+              </a>{" "}
+              (완성도) 또는{" "}
+              <a
+                href="https://chromewebstore.google.com/search/instant%20data%20scraper"
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-emerald-700 underline dark:text-emerald-400"
+              >
+                Instant Data Scraper
+              </a>{" "}
+              (간편). 설치 후 브라우저 새로고침.
+            </>,
+            <>
+              <a
+                href={naverUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-emerald-700 underline dark:text-emerald-400"
+              >
+                네이버 지도에서 ‘{placeName}’ 열기
+              </a>{" "}
+              → 리뷰 → 방문자 탭.
+            </>,
+            <>리뷰 목록을 아래로 스크롤해 원하는 만큼 로드(각 리뷰 “더보기”로 본문 펼침).</>,
+            <>확장 실행 → CSV로 내보내기.</>,
+          ].map((step, i) => (
+            <li key={i} className="flex gap-2.5">
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-bold text-white">
+                {i + 1}
+              </span>
+              <span className="text-neutral-700 dark:text-neutral-300">
+                {step}
+              </span>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-3 border-t border-emerald-200/70 pt-3 text-xs text-muted dark:border-emerald-900/50">
+          난독화된 페이지라 자동 감지가 어긋나면 Web Scraper가 더 안정적이에요.
+          설정이 필요하면 리뷰 페이지 DOM을 알려주시면 선택자를 만들어 드립니다.
+        </p>
+      </div>
+    </section>
   );
 }
 
