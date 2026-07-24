@@ -248,8 +248,8 @@ export async function webCollect(
       reviews: [],
       ok: false,
       error: hasNaver
-        ? "지금 인터넷 검색 결과를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
-        : "인터넷 검색 준비중 — 네이버 검색 오픈API 키(NAVER_SEARCH_CLIENT_ID/SECRET)를 넣으면 활성화됩니다.",
+        ? "지금 네이버 검색 결과를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
+        : "네이버 검색 준비중 — 네이버 검색 오픈API 키(NAVER_SEARCH_CLIENT_ID/SECRET)를 넣으면 활성화됩니다.",
       errorCode: hasNaver ? "UPSTREAM_ERROR" : "MISSING_KEY",
     };
   }
@@ -259,7 +259,7 @@ export async function webCollect(
     place: {
       platform: "web",
       placeId: query,
-      name: `"${query}" 인터넷 검색`,
+      name: `"${query}" 네이버 검색`,
       reviewCount: reviews.length,
     },
     reviews,

@@ -16,8 +16,8 @@ const META: Record<
   { label: string; short: string; dot: string; solid: string; soft: string }
 > = {
   web: {
-    label: "인터넷 검색",
-    short: "인터넷",
+    label: "네이버 검색",
+    short: "네이버검색",
     dot: "bg-blue-500",
     solid: "bg-blue-600 text-white border-blue-600",
     soft: "text-blue-600 dark:text-blue-400",
@@ -260,10 +260,10 @@ export default function ReviewClient() {
                 className="inline-flex items-center gap-2 text-sm transition"
               >
                 <span
-                  className={`flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border transition ${
+                  className={`flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border bg-card transition ${
                     active
-                      ? "border-indigo-600 bg-indigo-600 text-white"
-                      : "border-neutral-300 bg-card dark:border-neutral-600"
+                      ? "border-neutral-400 text-neutral-800 dark:border-neutral-400 dark:text-neutral-100"
+                      : "border-neutral-300 dark:border-neutral-600"
                   }`}
                 >
                   {active && <CheckIcon />}
@@ -679,7 +679,7 @@ function EmptyState() {
       <p className="text-sm font-medium">장소를 검색해 리뷰를 모아보세요</p>
       <p className="mt-1 text-xs text-muted">
         가게 이름을 입력하면 일치하는 장소 후보를 보여드려요. 정확한 곳을 고르면
-        요약과 함께 전체 리뷰를 .txt 로 내려받을 수 있습니다.
+        요약과 함께 전체 리뷰를 txt 파일로 내려받을 수 있습니다.
       </p>
     </div>
   );
