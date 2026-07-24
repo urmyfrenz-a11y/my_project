@@ -179,21 +179,15 @@ export default function ReviewClient() {
     setPhase("collecting");
     setError(null);
     setResults(null);
-    // 네이버 플레이스 방문자 리뷰는 서버(데이터센터 IP)가 막혀 브라우저 확장으로
-    // 직접 수집합니다. 서버에 보내지 않고, 결과 화면에서 안내 카드만 보여줍니다.
-    const backendPlatforms = selected.filter((p) => p !== "naver");
+    // 네이버 플레이스 방문자 리뷰는 스크래핑 API(한국 IP)를 통해 서버에서 수집합니다.
+    // 실패하면 결과 화면에서 브라우저 확장 안내 카드가 대체로 표시됩니다.
     try {
-      if (backendPlatforms.length === 0) {
-        setResults([]);
-        setPhase("done");
-        return;
-      }
       const res = await fetch("/api/reviews/collect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: place.name,
-          platforms: backendPlatforms,
+          platforms: selected,
           place,
         }),
       });
@@ -364,9 +358,10 @@ export default function ReviewClient() {
             />
           ))}
 
-          {selected.includes("naver") && (
-            <NaverExtensionGuide placeName={chosen?.name ?? query} />
-          )}
+          {selected.includes("naver") &&
+            !results.some(
+              (r) => r.platform === "naver" && r.ok && r.reviews.length > 0,
+            ) && <NaverExtensionGuide placeName={chosen?.name ?? query} />}
         </div>
       )}
     </div>

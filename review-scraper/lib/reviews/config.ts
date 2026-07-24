@@ -13,9 +13,13 @@ export const config = {
     restKey: process.env.KAKAO_REST_API_KEY ?? "",
   },
   naver: {
-    // Naver needs a real browser, which can't run on Vercel serverless.
-    // A dedicated Playwright worker (see /naver-worker) does the scraping and
-    // this app calls it over HTTP. Set NAVER_WORKER_URL to enable Naver.
+    // Naver blocks datacenter IPs (Vercel/Render) with a captcha. To collect
+    // Naver Place visitor reviews server-side we route through a scraping API
+    // that fetches via a Korean residential IP + JS rendering. Scrapingdog has
+    // a free tier (1,000 credits/mo, no card). Set SCRAPINGDOG_API_KEY.
+    scrapingKey: process.env.SCRAPINGDOG_API_KEY ?? "",
+    // Alternative: a self-run Playwright worker on a Korean residential IP
+    // (see /naver-worker). Optional.
     workerUrl: process.env.NAVER_WORKER_URL ?? "",
     workerToken: process.env.NAVER_WORKER_TOKEN ?? "",
   },
