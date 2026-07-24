@@ -83,6 +83,11 @@ async function scrapeNaver(query) {
     const m = finalUrl.match(/place\/(\d+)/) ?? finalUrl.match(/(\d{6,})/);
     if (m) placeId = m[1];
     if (!placeId) {
+      // The list is a client-rendered SPA ("로딩중" until JS populates it),
+      // so wait for the first place link to actually appear before reading it.
+      await page
+        .waitForSelector('a[href*="/place/"]', { timeout: 15000 })
+        .catch(() => {});
       const href = await page
         .locator('a[href*="/place/"]')
         .first()
@@ -90,6 +95,11 @@ async function scrapeNaver(query) {
         .catch(() => null);
       const mm = href?.match(/place\/(\d+)/);
       if (mm) placeId = mm[1];
+    }
+    // A single exact match may have redirected straight to the place page.
+    if (!placeId) {
+      const m2 = page.url().match(/place\/(\d+)/);
+      if (m2) placeId = m2[1];
     }
     if (!placeId) {
       // Diagnostic: understand WHY (anti-bot block vs. changed layout vs. empty).
