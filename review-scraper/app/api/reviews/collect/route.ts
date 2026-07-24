@@ -5,7 +5,7 @@ import { collectReviews, type Platform } from "@/lib/reviews";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const ALL: Platform[] = ["google", "kakao", "naver"];
+const ALL: Platform[] = ["web", "kakao", "naver"];
 
 export async function POST(req: Request) {
   let body: { query?: string; platforms?: string[] };

@@ -8,15 +8,15 @@ import type {
   CollectResult,
 } from "@/lib/reviews/types";
 
-const ALL_PLATFORMS: Platform[] = ["google", "kakao", "naver"];
+const ALL_PLATFORMS: Platform[] = ["kakao", "web", "naver"];
 
 const META: Record<
   Platform,
   { label: string; short: string; dot: string; solid: string; soft: string }
 > = {
-  google: {
-    label: "구글 검색",
-    short: "구글",
+  web: {
+    label: "인터넷 검색",
+    short: "인터넷",
     dot: "bg-blue-500",
     solid: "bg-blue-600 text-white border-blue-600",
     soft: "text-blue-600 dark:text-blue-400",

@@ -1,4 +1,4 @@
-import { googleCollect, googleSearchPlaces } from "./adapters/google";
+import { webCollect, webSearchPlaces } from "./adapters/web";
 import { kakaoCollect, kakaoSearchPlaces } from "./adapters/kakao";
 import { naverCollect } from "./adapters/naver";
 import type { CollectResult, Platform, PlaceSearchResult } from "./types";
@@ -6,7 +6,7 @@ import type { CollectResult, Platform, PlaceSearchResult } from "./types";
 export * from "./types";
 
 const COLLECTORS: Record<Platform, (q: string) => Promise<CollectResult>> = {
-  google: googleCollect,
+  web: webCollect,
   kakao: kakaoCollect,
   naver: naverCollect,
 };
@@ -37,7 +37,7 @@ export async function searchPlaces(
   query: string,
 ): Promise<PlaceSearchResult[]> {
   const settled = await Promise.allSettled([
-    googleSearchPlaces(),
+    webSearchPlaces(),
     kakaoSearchPlaces(query),
   ]);
   return settled.flatMap((s) => (s.status === "fulfilled" ? s.value : []));

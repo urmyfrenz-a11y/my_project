@@ -1,11 +1,7 @@
 /** Centralized env access so adapters never read process.env directly. */
 export const config = {
-  google: {
-    // "구글 검색" source. Google blocks datacenter-IP scraping, so we use a
-    // free third-party SERP API (Serper.dev). Optional — without it the
-    // Google Search source shows "준비중".
-    serperKey: process.env.SERPER_API_KEY ?? "",
-  },
+  // "인터넷 검색" source needs no config — it fetches DuckDuckGo's HTML
+  // results server-side with no API key, no quota, and no LLM. Nothing to set.
   kakao: {
     restKey: process.env.KAKAO_REST_API_KEY ?? "",
     // Optional Playwright worker (see /kakao-worker). Kakao's panel API only

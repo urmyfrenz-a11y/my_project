@@ -1,8 +1,8 @@
 import ReviewClient from "./ReviewClient";
 
 const SOURCES = [
-  { label: "구글 검색", dot: "bg-blue-500" },
   { label: "카카오맵", dot: "bg-amber-400" },
+  { label: "인터넷 검색", dot: "bg-blue-500" },
   { label: "네이버", dot: "bg-emerald-500" },
 ];
 
@@ -39,7 +39,7 @@ export default function Home() {
             </span>
           </h1>
           <p className="mx-auto mt-3.5 max-w-lg text-[15px] leading-relaxed text-muted sm:text-base">
-            구글 검색 · 카카오맵 · 네이버 플레이스의 리뷰를 검색 한 번으로 모아
+            카카오맵 · 인터넷 검색 · 네이버 플레이스의 리뷰를 검색 한 번으로 모아
             요약을 보여주고, 전체 리뷰를 .txt 파일로 내려받게 해드립니다.
           </p>
 
