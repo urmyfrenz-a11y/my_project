@@ -50,7 +50,18 @@ function pick(raw, placeId, idx) {
 }
 
 async function scrapeNaver(query) {
-  const browser = await chromium.launch({ headless: true });
+  // Container/low-memory friendly flags so this survives free tiers (512MB).
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-extensions",
+      "--disable-background-networking",
+    ],
+  });
   try {
     const ctx = await browser.newContext({
       userAgent:
