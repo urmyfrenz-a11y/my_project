@@ -101,9 +101,10 @@ async function scrapeNaver(query) {
           placeId = String(first.id);
           placeName = first.name || query;
         } else {
-          diag += ` keys=[${Object.keys(j || {}).join(",")}] rkeys=[${Object.keys(
-            j?.result || {},
-          ).join(",")}] snip=${JSON.stringify(j).slice(0, 500)}`;
+          // Naver returns an ncaptcha challenge (place: null) when it flags
+          // the request IP as a bot — common for datacenter IPs.
+          const blocked = j?.result?.ncaptcha ? "captcha" : "no-place";
+          diag += ` ${blocked}`;
         }
       }
     } catch (e) {
@@ -135,18 +136,13 @@ async function scrapeNaver(query) {
     }
 
     if (!placeId) {
-      const bodyText = (
-        await page
-          .locator("body")
-          .innerText()
-          .catch(() => "")
-      )
-        .replace(/\s+/g, " ")
-        .slice(0, 300);
+      const blocked = diag.includes("captcha");
       return {
         place: null,
         reviews: [],
-        error: `장소를 찾지 못했습니다. | ${diag} | url=${page.url()} | body=${bodyText}`,
+        error: blocked
+          ? "네이버가 서버 IP를 봇으로 차단했습니다(캡차). 네이버는 한국/residential 프록시가 필요합니다."
+          : `네이버에서 장소를 찾지 못했습니다. (${diag})`,
       };
     }
 
