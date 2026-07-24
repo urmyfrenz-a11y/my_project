@@ -54,16 +54,31 @@ export async function kakaoSearchPlaces(
  * Shape is best-effort and defensively parsed — if Kakao changes it, we
  * degrade to "0 reviews" rather than throwing.
  */
+interface KakaoPanelReview {
+  review_id?: number | string;
+  star_rating?: number;
+  contents?: string;
+  registered_at?: string;
+  like_count?: number;
+  meta?: { owner?: { nickname?: string } };
+}
+
+/**
+ * Pull visitor reviews from Kakao's current place API.
+ * The old place.map.kakao.com/main/v/{id} endpoint is gone (404). Reviews now
+ * live in the panel3 payload under kakaomap_review.reviews, and the endpoint
+ * only answers when the `pf: web` header is present (otherwise 406).
+ */
 async function kakaoGetReviews(placeId: string): Promise<UnifiedReview[]> {
-  const url = `https://place.map.kakao.com/main/v/${placeId}`;
+  const url = `https://place-api.map.kakao.com/places/panel3/${placeId}`;
   const res = await fetchWithTimeout(url, {
     headers: {
-      // These headers make the internal endpoint answer with JSON.
-      Referer: `https://place.map.kakao.com/${placeId}`,
+      Accept: "application/json",
+      pf: "web",
+      Referer: "https://place.map.kakao.com/",
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-      Accept: "application/json, text/plain, */*",
     },
   });
   if (!res.ok) return [];
@@ -73,32 +88,22 @@ async function kakaoGetReviews(placeId: string): Promise<UnifiedReview[]> {
   } catch {
     return [];
   }
-  // Kakao's current shape puts visitor reviews under comment.kamapComntList;
-  // older responses used comment.list. Handle both.
-  const comment = (data as {
-    comment?: { kamapComntList?: unknown[]; list?: unknown[] };
-  })?.comment;
-  const list = comment?.kamapComntList ?? comment?.list ?? [];
+  const list =
+    (data as { kakaomap_review?: { reviews?: unknown[] } })?.kakaomap_review
+      ?.reviews ?? [];
   const reviews: UnifiedReview[] = [];
   for (const item of Array.isArray(list) ? list : []) {
-    const r = item as {
-      commentid?: string | number;
-      contents?: string;
-      point?: number;
-      username?: string;
-      date?: string;
-      like?: number;
-    };
-    if (!r.contents) continue; // skip photo-only / empty entries
+    const r = item as KakaoPanelReview;
+    if (!r.contents || !String(r.contents).trim()) continue; // skip photo-only
     reviews.push({
       platform: "kakao",
       placeId,
-      reviewId: String(r.commentid ?? `${placeId}:${reviews.length}`),
-      author: anonymizeAuthor(r.username),
-      rating: normalizeRating(r.point),
-      text: r.contents,
-      createdAt: toIsoDate(r.date),
-      likeCount: r.like,
+      reviewId: String(r.review_id ?? `${placeId}:${reviews.length}`),
+      author: anonymizeAuthor(r.meta?.owner?.nickname),
+      rating: normalizeRating(r.star_rating),
+      text: String(r.contents),
+      createdAt: toIsoDate(r.registered_at),
+      likeCount: r.like_count,
       source: "scrape",
     });
   }
