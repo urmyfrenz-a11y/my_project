@@ -44,7 +44,7 @@ curl -XPOST localhost:3000/collect -H 'content-type: application/json' \
 
 ## Vercel(리뷰 사이트)에 연결
 워커 URL/토큰을 Vercel 프로젝트 환경변수에 넣습니다(직접 링크):
-https://vercel.com/hichul-kim-s-projects/my-project/settings/environment-variables
+https://vercel.com/hichul-kim-s-projects/map-review/settings/environment-variables
 
 - `NAVER_WORKER_URL` = 워커 주소 (예: `https://naver-review-worker.onrender.com`)
 - `NAVER_WORKER_TOKEN` = 위에서 정한 `WORKER_TOKEN` 과 동일 값
