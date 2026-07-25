@@ -59,6 +59,10 @@ export async function GET(req: Request) {
     connectTimeout: to,
     headersTimeout: to,
     bodyTimeout: to,
+    // Scrapingdog's proxy MITMs TLS, so the target cert won't verify — the
+    // docs require `curl -k`. Skip verification of the origin TLS.
+    requestTls: { rejectUnauthorized: false },
+    proxyTls: { rejectUnauthorized: false },
   });
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), to);
