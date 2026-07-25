@@ -270,6 +270,12 @@ export default function ReviewClient() {
                 <span className={active ? "font-medium" : "text-muted"}>
                   {META[p].label}
                 </span>
+                {p === "web" && (
+                  <span className="text-[11px] text-muted">(검색 스니펫)</span>
+                )}
+                {p === "naver" && (
+                  <span className="text-[11px] text-muted">(방문자 리뷰·유료)</span>
+                )}
               </button>
             );
           })}
@@ -472,6 +478,15 @@ function PlatformCard({
           )}
         </span>
       </div>
+
+      {/* '네이버 검색'은 검색 스니펫이라 리뷰 본문이 아님을 명시 */}
+      {platform === "web" && ok && (
+        <div className="border-b border-line bg-amber-50/60 px-5 py-2.5 text-xs leading-relaxed text-amber-800 dark:bg-amber-950/25 dark:text-amber-300/90">
+          ⓘ 네이버 <b>검색 결과 요약(스니펫)</b>입니다 — 리뷰 본문이 아니라 웹에
+          이 장소가 언급된 조각이라 업체정보·예약·메뉴 등이 섞일 수 있어요. 리뷰
+          본문 분석은 <b>네이버맵·카카오</b>를 권장합니다.
+        </div>
+      )}
 
       {!ok && (
         <div className="px-5 py-4 text-sm text-muted">
