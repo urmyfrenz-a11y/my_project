@@ -313,20 +313,138 @@ async function naverViaWorker(query: string): Promise<CollectResult> {
   }
 }
 
+/* ── Apify: Naver Place visitor reviews (primary) ─────────
+ * Naver has no official review API and blocks datacenter IPs. The stable path
+ * is the Apify "Naver Place Reviews" actor: given a keyword it resolves the
+ * place and returns visitor reviews. We call it synchronously (≈11s) and map
+ * the dataset items to our review shape. $1 / 1,000 results. */
+const APIFY_ACTOR = "huggable_quote~naver-place-reviews-scraper";
+
+interface ApifyReviewItem {
+  placeName?: string;
+  reviewText?: string;
+  reviewRating?: number | null;
+  reviewerName?: string;
+  reviewDate?: string;
+  visitCount?: string;
+  placeCategory?: string;
+}
+
+// Naver review dates arrive as "2026-07-07" or "25.12.16.화" / "25.8.1.금".
+function normalizeNaverDate(s?: string): string | undefined {
+  if (!s) return undefined;
+  const t = s.trim();
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  m = t.match(/^(\d{2})\.(\d{1,2})\.(\d{1,2})/);
+  if (m) return `20${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  return toIsoDate(t) ?? t;
+}
+
+async function naverViaApify(query: string): Promise<CollectResult> {
+  const token = config.naver.apifyToken;
+  if (!token) {
+    return {
+      platform: "naver",
+      place: null,
+      reviews: [],
+      ok: false,
+      error: "APIFY_TOKEN 이 설정되지 않았습니다.",
+      errorCode: "MISSING_KEY",
+    };
+  }
+  // maxPlacesPerKeyword: 1 → only the top-matching place (no other stores).
+  // includeBlogReviews: false → blog reviews are handled by the "네이버 검색"
+  // source; here we only want the place's visitor reviews.
+  const input = {
+    searchKeywords: [query],
+    maxPlacesPerKeyword: 1,
+    maxReviewPages: 3,
+    reviewSort: "NEWEST",
+    includeBlogReviews: false,
+    includeReviewPhotos: false,
+    includeReviewStats: false,
+  };
+  const url =
+    `https://api.apify.com/v2/acts/${APIFY_ACTOR}/run-sync-get-dataset-items` +
+    `?token=${encodeURIComponent(token)}&timeout=55&maxItems=300`;
+  const res = await fetchWithTimeout(
+    url,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    },
+    58000,
+  );
+  if (!res.ok) {
+    return {
+      platform: "naver",
+      place: null,
+      reviews: [],
+      ok: false,
+      error: `네이버 리뷰 수집 오류 (${res.status})`,
+      errorCode: "UPSTREAM_ERROR",
+    };
+  }
+  const items = (await res.json()) as ApifyReviewItem[];
+  const reviews: UnifiedReview[] = [];
+  const seen = new Set<string>();
+  let placeName = query;
+  for (const it of Array.isArray(items) ? items : []) {
+    const text = String(it.reviewText ?? "").trim();
+    if (!text) continue;
+    if (it.placeName) placeName = it.placeName;
+    const key = text.slice(0, 40) + "|" + (it.reviewerName ?? "");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    reviews.push({
+      platform: "naver",
+      placeId: query,
+      reviewId: `n:${reviews.length}`,
+      author: anonymizeAuthor(it.reviewerName),
+      rating: typeof it.reviewRating === "number" ? it.reviewRating : null,
+      text,
+      createdAt: normalizeNaverDate(it.reviewDate),
+      source: "scrape",
+    });
+  }
+  if (reviews.length === 0) {
+    return {
+      platform: "naver",
+      place: null,
+      reviews: [],
+      ok: false,
+      error: "네이버 리뷰를 찾지 못했습니다.",
+      errorCode: "NO_MATCH",
+    };
+  }
+  return {
+    platform: "naver",
+    place: {
+      platform: "naver",
+      placeId: query,
+      name: placeName,
+      reviewCount: reviews.length,
+    },
+    reviews,
+    ok: true,
+  };
+}
+
 export async function naverCollect(
   query: string,
   _place?: PlaceSearchResult,
 ): Promise<CollectResult> {
+  if (config.naver.apifyToken) return naverViaApify(query);
   if (config.naver.scrapingKey) return naverViaScrapingApi(query);
   if (config.naver.workerUrl) return naverViaWorker(query);
-  // Nothing configured → the UI shows the browser-extension guide instead.
   return {
     platform: "naver",
     place: null,
     reviews: [],
     ok: false,
-    error:
-      "네이버 플레이스는 브라우저 확장 또는 스크래핑 API(SCRAPINGDOG_API_KEY) 연결 시 수집됩니다.",
+    error: "네이버 플레이스 수집이 설정되지 않았습니다 (APIFY_TOKEN 필요).",
     errorCode: "SCRAPER_DISABLED",
   };
 }

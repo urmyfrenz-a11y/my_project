@@ -56,11 +56,6 @@ export default function Home() {
             ))}
           </div>
 
-          <p className="mx-auto mt-4 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50/70 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            ‘네이버 플레이스’ 방문자 리뷰는 데스크톱 <b>크롬 브라우저 + 확장
-            프로그램</b>으로만 수집됩니다.
-          </p>
         </header>
 
         <div className="mt-10">

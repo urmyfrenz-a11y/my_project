@@ -13,13 +13,13 @@ export const config = {
     restKey: process.env.KAKAO_REST_API_KEY ?? "",
   },
   naver: {
-    // Naver blocks datacenter IPs (Vercel/Render) with a captcha. To collect
-    // Naver Place visitor reviews server-side we route through a scraping API
-    // that fetches via a Korean residential IP + JS rendering. Scrapingdog has
-    // a free tier (1,000 credits/mo, no card). Set SCRAPINGDOG_API_KEY.
+    // Naver has no official API for Place visitor reviews and blocks datacenter
+    // IPs. The stable path is the Apify "Naver Place Reviews" actor, which we
+    // call server-side (it resolves the place from a keyword and returns visitor
+    // reviews). Free tier: $5/mo (~5,000 reviews at $1/1,000). Set APIFY_TOKEN.
+    apifyToken: process.env.APIFY_TOKEN ?? "",
+    // Legacy/optional fallbacks (Scrapingdog scraping, self-run worker).
     scrapingKey: process.env.SCRAPINGDOG_API_KEY ?? "",
-    // Alternative: a self-run Playwright worker on a Korean residential IP
-    // (see /naver-worker). Optional.
     workerUrl: process.env.NAVER_WORKER_URL ?? "",
     workerToken: process.env.NAVER_WORKER_TOKEN ?? "",
   },
