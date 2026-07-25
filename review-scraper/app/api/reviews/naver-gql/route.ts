@@ -15,16 +15,19 @@ import { config } from "@/lib/reviews/config";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-function buildProxyUrl(sp: URLSearchParams, key: string): string {
+function buildProxy(sp: URLSearchParams, key: string): { uri: string; token: string; user: string } {
   const host = sp.get("phost") || "proxy.scrapingdog.com";
   const port = sp.get("pport") || "8081";
   // Templates let us try different Scrapingdog option encodings via URL params;
   // "{key}" is replaced server-side (never echoed back).
   const userT = sp.get("puser") || "scrapingdog";
   const passT = sp.get("ppass") || "{key}";
-  const user = encodeURIComponent(userT.replace(/\{key\}/g, key));
-  const pass = encodeURIComponent(passT.replace(/\{key\}/g, key));
-  return `http://${user}:${pass}@${host}:${port}`;
+  const user = userT.replace(/\{key\}/g, key);
+  const pass = passT.replace(/\{key\}/g, key);
+  // undici ProxyAgent does NOT read auth from the URI userinfo — it needs an
+  // explicit Proxy-Authorization token. Build Basic auth ourselves.
+  const token = "Basic " + Buffer.from(`${user}:${pass}`).toString("base64");
+  return { uri: `http://${host}:${port}`, token, user };
 }
 
 // The full getVisitorReviews document is version-specific; keep a candidate here
@@ -49,9 +52,10 @@ export async function GET(req: Request) {
   if (!key) return NextResponse.json({ error: "no scraping key" }, { status: 500 });
 
   const to = Number(sp.get("to") || "15000");
-  const proxyUrl = buildProxyUrl(sp, key);
+  const proxy = buildProxy(sp, key);
   const dispatcher = new ProxyAgent({
-    uri: proxyUrl,
+    uri: proxy.uri,
+    token: proxy.token,
     connectTimeout: to,
     headersTimeout: to,
     bodyTimeout: to,
@@ -125,7 +129,8 @@ export async function GET(req: Request) {
       ms: Date.now() - t0,
       target,
       method,
-      proxyHost: sp.get("phost") || "proxy.scrapingdog.com",
+      proxyHost: proxy.uri,
+      proxyUser: proxy.user,
       len: text.length,
       sample: text.slice(0, 3000),
     });
