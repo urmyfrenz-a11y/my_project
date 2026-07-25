@@ -48,8 +48,16 @@ export async function GET(req: Request) {
   const key = config.naver.scrapingKey;
   if (!key) return NextResponse.json({ error: "no scraping key" }, { status: 500 });
 
+  const to = Number(sp.get("to") || "15000");
   const proxyUrl = buildProxyUrl(sp, key);
-  const dispatcher = new ProxyAgent(proxyUrl);
+  const dispatcher = new ProxyAgent({
+    uri: proxyUrl,
+    connectTimeout: to,
+    headersTimeout: to,
+    bodyTimeout: to,
+  });
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), to);
 
   let target: string;
   let method = (sp.get("method") || "GET").toUpperCase();
@@ -107,23 +115,27 @@ export async function GET(req: Request) {
       headers,
       body,
       dispatcher,
-      // @ts-expect-error undici option
-      bodyTimeout: 55000,
-      headersTimeout: 55000,
+      signal: ac.signal,
     });
     const text = await res.text();
+    clearTimeout(timer);
     return NextResponse.json({
       ok: res.ok,
       status: res.status,
       ms: Date.now() - t0,
       target,
       method,
+      proxyHost: sp.get("phost") || "proxy.scrapingdog.com",
       len: text.length,
       sample: text.slice(0, 3000),
     });
   } catch (e) {
+    clearTimeout(timer);
     return NextResponse.json({
-      error: String(e instanceof Error ? e.message : e),
+      error: String(e instanceof Error ? `${e.name}: ${e.message}` : e),
+      cause: (e as { cause?: unknown })?.cause
+        ? String((e as { cause?: { message?: string } }).cause?.message ?? (e as { cause?: unknown }).cause)
+        : undefined,
       target,
       method,
       ms: Date.now() - t0,
