@@ -126,30 +126,37 @@ export async function GET(req: Request) {
     headers["content-type"] = "application/json";
     headers["referer"] = `https://pcmap.place.naver.com/${type}/${id}/review/visitor`;
     headers["origin"] = "https://pcmap.place.naver.com";
-    body = JSON.stringify([
-      {
-        operationName: "getVisitorReviews",
-        variables: {
-          input: {
-            businessId: id,
-            businessType: type,
-            item: "0",
-            bookingBusinessId: null,
-            page,
-            size,
-            isPhotoUsed: false,
-            includeContent: true,
-            getUserStats: true,
-            includeReceiptPhotos: true,
-            cidList: [],
-            getReactions: true,
-            getTrailer: true,
-            sort: "recent",
+    // Allow injecting the real query (base64) and a full raw body override via
+    // URL params, so we can finalize the request without redeploying.
+    const q64 = sp.get("q64");
+    const query = q64 ? Buffer.from(q64, "base64").toString("utf8") : GQL_QUERY;
+    const rawBody = sp.get("body64");
+    body = rawBody
+      ? Buffer.from(rawBody, "base64").toString("utf8")
+      : JSON.stringify([
+          {
+            operationName: "getVisitorReviews",
+            variables: {
+              input: {
+                businessId: id,
+                businessType: type,
+                item: "0",
+                bookingBusinessId: null,
+                page,
+                size,
+                isPhotoUsed: false,
+                includeContent: true,
+                getUserStats: true,
+                includeReceiptPhotos: true,
+                cidList: [],
+                getReactions: true,
+                getTrailer: true,
+                sort: "recent",
+              },
+            },
+            query,
           },
-        },
-        query: GQL_QUERY,
-      },
-    ]);
+        ]);
   } else {
     target = sp.get("target") || "https://ipinfo.io/json";
   }
@@ -165,6 +172,25 @@ export async function GET(req: Request) {
     });
     const text = await res.text();
     clearTimeout(timer);
+    // grep mode: return windows around each match of a substring (e.g. to find
+    // the real getVisitorReviews query text inside a JS bundle).
+    const grep = sp.get("grep");
+    let hits: string[] | undefined;
+    if (grep) {
+      hits = [];
+      let from = 0;
+      while (hits.length < 5) {
+        const at = text.indexOf(grep, from);
+        if (at < 0) break;
+        hits.push(text.slice(Math.max(0, at - 200), at + 500));
+        from = at + grep.length;
+      }
+    }
+    // scripts mode: list all <script src> URLs (to locate the review bundle).
+    const scripts =
+      sp.get("scripts") === "1"
+        ? [...text.matchAll(/<script[^>]+src="([^"]+)"/gi)].map((m) => m[1]).slice(0, 60)
+        : undefined;
     return NextResponse.json({
       ok: res.ok,
       status: res.status,
@@ -174,7 +200,9 @@ export async function GET(req: Request) {
       proxyHost: proxy.uri,
       proxyUser: proxy.user,
       len: text.length,
-      sample: text.slice(0, 3000),
+      hits,
+      scripts,
+      sample: grep || scripts ? undefined : text.slice(0, 3000),
     });
   } catch (e) {
     clearTimeout(timer);
