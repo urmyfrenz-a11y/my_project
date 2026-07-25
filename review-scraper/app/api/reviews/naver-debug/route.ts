@@ -10,12 +10,18 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(req: Request) {
-  const q = new URL(req.url).searchParams.get("q")?.trim();
-  if (!q) {
-    return NextResponse.json({ error: "q is required" }, { status: 400 });
+  const sp = new URL(req.url).searchParams;
+  const q = sp.get("q")?.trim();
+  const type = sp.get("type")?.trim();
+  const id = sp.get("id")?.trim();
+  // Single Scrapingdog call per request to stay under the 60s function limit:
+  //  - ?type=X&id=Y  → fetch that place's review page, parse + sample HTML
+  //  - ?q=...        → resolve the place only (no review fetch)
+  if (!q && !(type && id)) {
+    return NextResponse.json({ error: "q, or type&id, required" }, { status: 400 });
   }
   try {
-    const out = await naverDebug(q);
+    const out = await naverDebug({ q, type, id });
     return NextResponse.json(out);
   } catch (e) {
     return NextResponse.json(
@@ -24,5 +30,3 @@ export async function GET(req: Request) {
     );
   }
 }
-
-// deploy check after git reconnect

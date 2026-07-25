@@ -157,49 +157,72 @@ async function naverViaScrapingApi(query: string): Promise<CollectResult> {
  * place plus a slice of the raw rendered HTML and the parse count, so we can
  * refine parseReviews against real Naver markup without shipping guesses.
  */
-export async function naverDebug(query: string): Promise<Record<string, unknown>> {
+export async function naverDebug(opts: {
+  q?: string;
+  type?: string;
+  id?: string;
+}): Promise<Record<string, unknown>> {
   if (!config.naver.scrapingKey) return { hasKey: false };
 
-  // Step 1: fetch the mobile search page (browser-rendered) and extract place.
-  const searchUrl =
-    "https://m.search.naver.com/search.naver?query=" + encodeURIComponent(query);
-  const search = await sdGet(searchUrl, true, 50000);
-  const place = search.ok ? extractPlaceFromHtml(search.body, query) : null;
-  // Sample around the first place link so we can tune the extractor if needed.
-  const linkAt = search.body.search(/place\.naver\.com\/[a-z]+\/\d+/i);
-  const sampleStart = linkAt > 300 ? linkAt - 300 : 0;
-
-  const out: Record<string, unknown> = {
-    hasKey: true,
-    query,
-    search: {
-      ok: search.ok,
-      status: search.status,
-      bodyLength: search.body.length,
-      hasPlaceLink: linkAt >= 0,
-      sample: search.body.slice(sampleStart, sampleStart + 1500),
-    },
-    place,
-  };
-
-  // Step 2: if resolved, fetch the review page and sample its HTML.
-  if (place) {
-    const reviewUrl = `https://m.place.naver.com/${place.type}/${place.id}/review/visitor`;
+  // Mode B: fetch a specific place's review page and analyse its markup.
+  // One Scrapingdog call only, so it stays under the 60s function limit.
+  if (opts.type && opts.id) {
+    const reviewUrl = `https://m.place.naver.com/${opts.type}/${opts.id}/review/visitor`;
     const rev = await sdGet(reviewUrl, true, 55000);
-    const parsed = parseReviews(rev.body, place.id);
-    const anchor = rev.body.search(/rvbody|pui__|review|리뷰|평점|방문/i);
-    const start = anchor > 500 ? anchor - 500 : 0;
-    out.review = {
+    const parsed = parseReviews(rev.body, opts.id);
+    // Report several candidate windows so we can see the real review markup.
+    const marks = ["data-pui-click-code", "pui__vn15t2", "rvbody", "리뷰", "평점", "방문"];
+    const windows: Record<string, string> = {};
+    for (const m of marks) {
+      const at = rev.body.indexOf(m);
+      if (at >= 0) windows[m] = rev.body.slice(at, at + 600);
+    }
+    return {
+      hasKey: true,
       reviewUrl,
       ok: rev.ok,
       status: rev.status,
       bodyLength: rev.body.length,
       parsedCount: parsed.length,
-      firstParsed: parsed.slice(0, 3).map((r) => r.text),
-      htmlSample: rev.body.slice(start, start + 4000),
+      firstParsed: parsed.slice(0, 5).map((r) => r.text),
+      windows,
     };
   }
-  return out;
+
+  // Mode A: resolve a query to a place (single Scrapingdog call). Also report a
+  // battery of place-id pattern matches so we can tune extractPlaceFromHtml.
+  const query = opts.q || "";
+  const searchUrl =
+    "https://m.search.naver.com/search.naver?query=" + encodeURIComponent(query);
+  const search = await sdGet(searchUrl, true, 50000);
+  const body = search.body;
+  const patterns: Record<string, string> = {
+    mPlace: "(?:m\\.place|pcmap\\.place|place)\\.naver\\.com/([a-z]+)/(\\d{6,})",
+    restaurantPath: "/(restaurant|place|hairshop|hospital|accommodation|attraction)/(\\d{6,})",
+    jsonId: '"id"\\s*:\\s*"?(\\d{7,})"?',
+    placeId: '"(?:placeId|entryId|sid)"\\s*:\\s*"?(\\d{6,})"?',
+    encoded: "place\\.naver\\.com%2F",
+  };
+  const matches: Record<string, { count: number; first: string; sample: string }> = {};
+  for (const [name, src] of Object.entries(patterns)) {
+    const re = new RegExp(src, "gi");
+    const all = [...body.matchAll(re)];
+    if (all.length) {
+      const at = all[0].index ?? 0;
+      matches[name] = {
+        count: all.length,
+        first: all[0][0],
+        sample: body.slice(Math.max(0, at - 150), at + 250),
+      };
+    }
+  }
+  return {
+    hasKey: true,
+    query,
+    search: { ok: search.ok, status: search.status, bodyLength: body.length },
+    place: search.ok ? extractPlaceFromHtml(body, query) : null,
+    matches,
+  };
 }
 
 interface WorkerResponse {
