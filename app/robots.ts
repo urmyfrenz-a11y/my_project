@@ -7,3 +7,4 @@ export default function robots(): MetadataRoute.Robots {
     host: "https://seoul-sangkwon.vercel.app",
   };
 }
+// PWA/서비스워커 배포 반영을 위한 트리거 커밋
