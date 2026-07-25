@@ -136,18 +136,29 @@ async function naverApi(query: string): Promise<UnifiedReview[]> {
   const q = encodeURIComponent(query + " 후기 리뷰");
   const out: UnifiedReview[] = [];
   const seen = new Set<string>();
-  // Blog first (most review-like), then general web docs to top up.
+  // The relevance filter (in push) drops off-topic posts, so a single page of
+  // 100 raw results often yields far fewer. Paginate (Naver allows start up to
+  // 1000) so we still reach MAX_RESULTS *relevant* posts. Blog first (most
+  // review-like), then general web docs to top up.
+  const MAX_PAGES = 5; // up to 500 raw per kind
   for (const kind of ["blog", "webkr"]) {
-    if (out.length >= MAX_RESULTS) break;
-    try {
-      const res = await fetchWithTimeout(
-        `https://openapi.naver.com/v1/search/${kind}.json?query=${q}&display=100&sort=sim`,
-        { headers },
-        10000,
-      );
-      if (!res.ok) continue;
-      const data = (await res.json()) as { items?: NaverItem[] };
-      for (const it of data.items ?? []) {
+    for (let page = 0; page < MAX_PAGES && out.length < MAX_RESULTS; page++) {
+      const start = 1 + page * 100;
+      let items: NaverItem[] = [];
+      try {
+        const res = await fetchWithTimeout(
+          `https://openapi.naver.com/v1/search/${kind}.json?query=${q}&display=100&start=${start}&sort=sim`,
+          { headers },
+          10000,
+        );
+        if (!res.ok) break;
+        const data = (await res.json()) as { items?: NaverItem[] };
+        items = data.items ?? [];
+      } catch {
+        break; // try next kind
+      }
+      if (items.length === 0) break; // no more results for this kind
+      for (const it of items) {
         if (out.length >= MAX_RESULTS) break;
         const created =
           it.postdate && /^\d{8}$/.test(it.postdate)
@@ -165,8 +176,7 @@ async function naverApi(query: string): Promise<UnifiedReview[]> {
           created,
         );
       }
-    } catch {
-      /* try next kind */
+      if (items.length < 100) break; // last page for this kind
     }
   }
   return out;
