@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ProxyAgent, fetch as uFetch } from "undici";
+import net from "node:net";
 import { config } from "@/lib/reviews/config";
 
 // Temporary R&D endpoint: drive a request to any target THROUGH Scrapingdog's
@@ -52,6 +53,43 @@ export async function GET(req: Request) {
   if (!key) return NextResponse.json({ error: "no scraping key" }, { status: 500 });
 
   const to = Number(sp.get("to") || "15000");
+
+  // Probe mode: raw TCP connect to a host:port to test reachability from Vercel.
+  if (sp.get("probe") === "1") {
+    const host = sp.get("phost") || "proxy.scrapingdog.com";
+    const port = Number(sp.get("pport") || "8081");
+    const t0 = Date.now();
+    const result = await new Promise<Record<string, unknown>>((resolve) => {
+      const s = net.connect({ host, port });
+      const done = (r: Record<string, unknown>) => {
+        s.destroy();
+        resolve({ host, port, ms: Date.now() - t0, ...r });
+      };
+      s.setTimeout(to);
+      s.on("connect", () => done({ connected: true }));
+      s.on("timeout", () => done({ connected: false, err: "timeout" }));
+      s.on("error", (e) => done({ connected: false, err: String(e.message) }));
+    });
+    return NextResponse.json(result);
+  }
+
+  // Direct mode: fetch the target WITHOUT the proxy, to confirm egress works.
+  if (sp.get("direct") === "1") {
+    const target = sp.get("target") || "https://ipinfo.io/json";
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), to);
+    const t0 = Date.now();
+    try {
+      const res = await uFetch(target, { signal: ac.signal });
+      const text = await res.text();
+      clearTimeout(timer);
+      return NextResponse.json({ direct: true, status: res.status, ms: Date.now() - t0, sample: text.slice(0, 500) });
+    } catch (e) {
+      clearTimeout(timer);
+      return NextResponse.json({ direct: true, error: String(e instanceof Error ? e.message : e), ms: Date.now() - t0 });
+    }
+  }
+
   const proxy = buildProxy(sp, key);
   const dispatcher = new ProxyAgent({
     uri: proxy.uri,
