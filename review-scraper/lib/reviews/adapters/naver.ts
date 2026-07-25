@@ -356,10 +356,13 @@ async function naverViaApify(query: string): Promise<CollectResult> {
   // maxPlacesPerKeyword: 1 → only the top-matching place (no other stores).
   // includeBlogReviews: false → blog reviews are handled by the "네이버 검색"
   // source; here we only want the place's visitor reviews.
+  // maxReviewPages high + maxItems=300 caps the collection at 300 reviews
+  // (≈$0.30, pay-per-result); the run timeout returns partial results if a big
+  // place would take longer than the function budget.
   const input = {
     searchKeywords: [query],
     maxPlacesPerKeyword: 1,
-    maxReviewPages: 3,
+    maxReviewPages: 30,
     reviewSort: "NEWEST",
     includeBlogReviews: false,
     includeReviewPhotos: false,
@@ -444,7 +447,7 @@ export async function naverCollect(
     place: null,
     reviews: [],
     ok: false,
-    error: "네이버 플레이스 수집이 설정되지 않았습니다 (APIFY_TOKEN 필요).",
+    error: "네이버맵 수집이 설정되지 않았습니다 (APIFY_TOKEN 필요).",
     errorCode: "SCRAPER_DISABLED",
   };
 }

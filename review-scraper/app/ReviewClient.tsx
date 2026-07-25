@@ -30,7 +30,7 @@ const META: Record<
     soft: "text-amber-600 dark:text-amber-400",
   },
   naver: {
-    label: "네이버 플레이스",
+    label: "네이버맵",
     short: "네이버",
     dot: "bg-emerald-500",
     solid: "bg-emerald-600 text-white border-emerald-600",
@@ -126,7 +126,7 @@ type Phase = "idle" | "searching" | "picking" | "notfound" | "collecting" | "don
 
 export default function ReviewClient() {
   const [query, setQuery] = useState("");
-  // 네이버 플레이스는 Apify(유료 크레딧) 호출이라 기본 언체크로 두어, 사용자가
+  // 네이버맵는 Apify(유료 크레딧) 호출이라 기본 언체크로 두어, 사용자가
   // 원할 때만 켜서 크레딧을 아낀다. (카카오·네이버검색은 무료라 기본 선택.)
   const [selected, setSelected] = useState<Platform[]>(["kakao", "web"]);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -180,7 +180,7 @@ export default function ReviewClient() {
     setPhase("collecting");
     setError(null);
     setResults(null);
-    // 네이버 플레이스 방문자 리뷰는 서버가 Apify 액터로 자동 수집한다.
+    // 네이버맵 방문자 리뷰는 서버가 Apify 액터로 자동 수집한다.
     try {
       const res = await fetch("/api/reviews/collect", {
         method: "POST",

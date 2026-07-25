@@ -7,7 +7,7 @@ export type Platform = "web" | "kakao" | "naver";
 export const PLATFORM_LABELS: Record<Platform, string> = {
   web: "인터넷 검색",
   kakao: "카카오맵",
-  naver: "네이버 플레이스",
+  naver: "네이버맵",
 };
 
 /** A place candidate returned from a search query. */
