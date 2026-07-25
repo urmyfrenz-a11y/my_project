@@ -356,13 +356,14 @@ async function naverViaApify(query: string): Promise<CollectResult> {
   // maxPlacesPerKeyword: 1 → only the top-matching place (no other stores).
   // includeBlogReviews: false → blog reviews are handled by the "네이버 검색"
   // source; here we only want the place's visitor reviews.
-  // maxReviewPages high + maxItems=300 caps the collection at 300 reviews
-  // (≈$0.30, pay-per-result); the run timeout returns partial results if a big
-  // place would take longer than the function budget.
+  // maxItems=100 caps the collection at 100 newest reviews (≈$0.10,
+  // pay-per-result) so the free $5/mo lasts ~50 collections. reviewSort NEWEST
+  // → most recent first. The run timeout returns partial results if a big place
+  // would take longer than the function budget.
   const input = {
     searchKeywords: [query],
     maxPlacesPerKeyword: 1,
-    maxReviewPages: 30,
+    maxReviewPages: 10,
     reviewSort: "NEWEST",
     includeBlogReviews: false,
     includeReviewPhotos: false,
@@ -370,7 +371,7 @@ async function naverViaApify(query: string): Promise<CollectResult> {
   };
   const url =
     `https://api.apify.com/v2/acts/${APIFY_ACTOR}/run-sync-get-dataset-items` +
-    `?token=${encodeURIComponent(token)}&timeout=55&maxItems=300`;
+    `?token=${encodeURIComponent(token)}&timeout=55&maxItems=100`;
   const res = await fetchWithTimeout(
     url,
     {
