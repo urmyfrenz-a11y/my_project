@@ -176,18 +176,25 @@ export default function ReviewClient() {
   // Step 2 — collect reviews for the exact place the user picked.
   async function collectFor(place: PlaceSearchResult) {
     setChosen(place);
-    setPhase("collecting");
     setError(null);
     setResults(null);
-    // 네이버 플레이스 방문자 리뷰는 스크래핑 API(한국 IP)를 통해 서버에서 수집합니다.
-    // 실패하면 결과 화면에서 브라우저 확장 안내 카드가 대체로 표시됩니다.
+    // 네이버 플레이스는 서버(데이터센터 IP)로는 차단되므로 브라우저 확장으로
+    // 안내만 하고, 서버 수집은 카카오·네이버검색만 요청한다.
+    const serverPlatforms = selected.filter((p) => p !== "naver");
+    if (serverPlatforms.length === 0) {
+      // 네이버만 선택한 경우: 서버에 보낼 게 없으니 확장 안내만 노출.
+      setResults([]);
+      setPhase("done");
+      return;
+    }
+    setPhase("collecting");
     try {
       const res = await fetch("/api/reviews/collect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: place.name,
-          platforms: selected,
+          platforms: serverPlatforms,
           place,
         }),
       });
@@ -271,13 +278,18 @@ export default function ReviewClient() {
                   {META[p].label}
                 </span>
                 {p === "naver" && (
-                  <span className="text-[11px] text-muted">(확장 프로그램)</span>
+                  <span className="text-[11px] text-muted">(크롬 확장)</span>
                 )}
               </button>
             );
           })}
         </div>
       </form>
+
+      {/* 네이버 플레이스를 체크하는 순간 확장 안내가 뜬다 (서버 수집 대상이 아님). */}
+      {selected.includes("naver") && (
+        <NaverExtensionGuide placeName={chosen?.name ?? query} />
+      )}
 
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
@@ -357,56 +369,57 @@ export default function ReviewClient() {
               query={chosen?.name ?? query}
             />
           ))}
-
-          {selected.includes("naver") &&
-            !results.some(
-              (r) => r.platform === "naver" && r.ok && r.reviews.length > 0,
-            ) && <NaverExtensionGuide placeName={chosen?.name ?? query} />}
         </div>
       )}
     </div>
   );
 }
 
+// 정식 크롬 웹스토어 링크 (검증됨). 이름이 비슷한 모방 확장이 있어 ID로 고정.
+const INSTANT_DATA_SCRAPER_URL =
+  "https://chromewebstore.google.com/detail/instant-data-scraper/ofaokhiedipichpaobibbnahnkdoiiah";
+const WEB_SCRAPER_URL =
+  "https://chromewebstore.google.com/detail/web-scraper-free-web-scra/jnhgnonknehpejjnehehllkliplmbmhn";
+
 function NaverExtensionGuide({ placeName }: { placeName: string }) {
-  const naverUrl = `https://map.naver.com/p/search/${encodeURIComponent(placeName)}`;
+  const q = (placeName || "").trim();
+  const naverUrl = q
+    ? `https://map.naver.com/p/search/${encodeURIComponent(q)}`
+    : "https://map.naver.com/";
   return (
     <section className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/60 shadow-sm dark:border-emerald-900/50 dark:bg-emerald-950/20">
       <div className="flex items-center gap-2.5 border-b border-emerald-200/70 px-5 py-3.5 dark:border-emerald-900/50">
         <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-        <span className="text-sm font-semibold">네이버 플레이스</span>
+        <span className="text-sm font-semibold">네이버 플레이스 · 크롬 확장으로 수집</span>
         <span className="ml-auto rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-          확장 프로그램으로 수집
+          Chrome 전용
         </span>
       </div>
       <div className="px-5 py-4 text-sm leading-relaxed">
         <p className="text-muted">
-          네이버는 서버(데이터센터 IP)로는 리뷰를 막습니다. 그래서 네이버 플레이스
-          방문자 리뷰는 <b className="text-foreground">본인 브라우저의 확장
-          프로그램</b>으로 직접 수집합니다. (한국 IP라 안 막혀요.)
+          네이버는 서버(데이터센터 IP)로는 리뷰를 막아서, 방문자 리뷰는{" "}
+          <b className="text-foreground">본인 크롬 브라우저의 확장 프로그램</b>으로
+          직접 내려받습니다. (내 IP라 안 막히고, 스크롤한 만큼 전부 수집돼요.)
         </p>
-        <ol className="mt-3 space-y-2">
+
+        <ol className="mt-3 space-y-2.5">
           {[
             <>
-              확장 설치:{" "}
               <a
-                href="https://chromewebstore.google.com/search/web%20scraper"
+                href={INSTANT_DATA_SCRAPER_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="font-medium text-emerald-700 underline dark:text-emerald-400"
+                className="font-semibold text-emerald-700 underline dark:text-emerald-400"
               >
-                Web Scraper
+                Instant Data Scraper 설치
               </a>{" "}
-              (완성도) 또는{" "}
-              <a
-                href="https://chromewebstore.google.com/search/instant%20data%20scraper"
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-emerald-700 underline dark:text-emerald-400"
-              >
-                Instant Data Scraper
-              </a>{" "}
-              (간편). 설치 후 브라우저 새로고침.
+              (크롬 웹스토어 → ‘Chrome에 추가’).
+            </>,
+            <>
+              <b className="text-foreground">설치 후 새로고침</b> — 확장은 설치
+              전에 열려 있던 탭에는 적용되지 않습니다. 네이버 지도 탭을{" "}
+              <b className="text-foreground">F5</b>로 새로고침하거나 새 탭에서
+              여세요.
             </>,
             <>
               <a
@@ -415,12 +428,21 @@ function NaverExtensionGuide({ placeName }: { placeName: string }) {
                 rel="noreferrer"
                 className="font-medium text-emerald-700 underline dark:text-emerald-400"
               >
-                네이버 지도에서 ‘{placeName}’ 열기
+                네이버 지도에서 {q ? `‘${q}’ ` : "장소 "}열기
               </a>{" "}
-              → 리뷰 → 방문자 탭.
+              → 해당 장소 → <b className="text-foreground">리뷰 › 방문자</b> 탭.
             </>,
-            <>리뷰 목록을 아래로 스크롤해 원하는 만큼 로드(각 리뷰 “더보기”로 본문 펼침).</>,
-            <>확장 실행 → CSV로 내보내기.</>,
+            <>
+              리뷰 목록을 아래로 스크롤해 원하는 만큼 로드(각 리뷰 “더보기”로 본문
+              펼침).
+            </>,
+            <>
+              브라우저 우측 상단{" "}
+              <b className="text-foreground">Instant Data Scraper 아이콘 클릭</b>{" "}
+              → 리뷰 목록이 표로 잡히면 <b className="text-foreground">
+              “Load more / 무한 스크롤”</b>로 끝까지 로드 →{" "}
+              <b className="text-foreground">CSV / XLSX 내보내기</b>.
+            </>,
           ].map((step, i) => (
             <li key={i} className="flex gap-2.5">
               <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-bold text-white">
@@ -432,9 +454,19 @@ function NaverExtensionGuide({ placeName }: { placeName: string }) {
             </li>
           ))}
         </ol>
+
         <p className="mt-3 border-t border-emerald-200/70 pt-3 text-xs text-muted dark:border-emerald-900/50">
-          난독화된 페이지라 자동 감지가 어긋나면 Web Scraper가 더 안정적이에요.
-          설정이 필요하면 리뷰 페이지 DOM을 알려주시면 선택자를 만들어 드립니다.
+          표가 리뷰 대신 다른 영역으로 잡히면, 확장 팝업에서 다른 후보 테이블을
+          선택하세요. 더 정밀한 수집이 필요하면{" "}
+          <a
+            href={WEB_SCRAPER_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
+            Web Scraper
+          </a>
+          (고급, 설정 필요)도 쓸 수 있어요. · 데스크톱 크롬에서만 동작합니다.
         </p>
       </div>
     </section>
