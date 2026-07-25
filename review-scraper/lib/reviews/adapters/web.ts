@@ -64,6 +64,33 @@ function clean(html: string): string {
     .trim();
 }
 
+/* ── relevance guard ──────────────────────────────────────
+ * Naver blog/web search returns anything that partially matches the keywords:
+ * for "커피에반하다 광교호수공원점" it also surfaces posts about 오공김밥 청라호수공원점,
+ * 우지커피 광교호수공원점, 순천호수공원점 (they share 호수공원/커피/광교). Those are
+ * other stores, so mixing them corrupts the review set. We keep only results
+ * whose text carries every meaningful token of the place name (brand + branch),
+ * tolerating a trailing 점/지점/본점 suffix. */
+function normText(s: string): string {
+  return (s || "").toLowerCase().replace(/[\s\-_.,·'"()[\]]/g, "");
+}
+const WEB_BRANCH_SUFFIX = /(본점|직영점|지점|점)$/;
+function relevantToPlace(query: string, text: string): boolean {
+  const n = normText(text);
+  if (!n) return false;
+  const tokens = query.split(/\s+/).filter((t) => normText(t).length >= 2);
+  if (tokens.length === 0) {
+    const q = normText(query);
+    return q.length >= 2 && n.includes(q);
+  }
+  return tokens.every((t) => {
+    const nt = normText(t);
+    if (n.includes(nt)) return true;
+    const stripped = nt.replace(WEB_BRANCH_SUFFIX, "");
+    return stripped.length >= 2 && n.includes(stripped);
+  });
+}
+
 function push(
   out: UnifiedReview[],
   seen: Set<string>,
@@ -75,6 +102,8 @@ function push(
 ) {
   const text = [title, snippet].filter(Boolean).join(" — ");
   if (!text || seen.has(text)) return;
+  // Drop results that aren't actually about this place (see relevance guard).
+  if (!relevantToPlace(query, text)) return;
   seen.add(text);
   out.push({
     platform: "web",
