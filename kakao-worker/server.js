@@ -228,170 +228,85 @@ async function scrapeKakao(placeId) {
     // is in here.
     const loadReqLog = reqLog.slice(0, 80);
 
-    // Direct API probe from *inside* the browser (same-origin cookies + pf:web
-    // header). The place page shows only a ~7 summary; the full review list
-    // lives behind a paginated API. Probe candidate endpoints, harvest any that
-    // return review-like objects, and report a summary in /debug so we can see
-    // which endpoint (if any) serves more than 7.
-    let apiProbe = [];
+    // THE real review-list API (found via the user's DevTools):
+    //   place-api.map.kakao.com/places/tab/reviews/kakaomap/{id}?order=RECOMMENDED&only_photo_review=false
+    // Serves the full visitor reviews (34), not panel3's 3. Dissect it + the
+    // blog variant + probe pagination so we can build the adapter.
+    let reviewTab = null;
     try {
-      apiProbe = await page.evaluate(async (id) => {
-        const urls = [
-          `https://place-api.map.kakao.com/places/panel3/${id}`,
-          `https://place-api.map.kakao.com/places/panel3/${id}?page=2`,
-          `https://place-api.map.kakao.com/places/panel3/${id}?page=1&size=100`,
-          `https://place-api.map.kakao.com/places/main/v/${id}`,
-          `https://place-api.map.kakao.com/places/${id}/comments`,
-          `https://place-api.map.kakao.com/places/${id}/reviews`,
-          `https://place-api.map.kakao.com/places/${id}/kakaomap_reviews`,
-          `https://place.map.kakao.com/commentlist/v/${id}`,
-          `https://place.map.kakao.com/commentlist/v/${id}/0`,
-        ];
-        const out = [];
-        for (const u of urls) {
-          try {
-            const r = await fetch(u, {
-              headers: { pf: "web", Accept: "application/json" },
-            });
-            const t = await r.text();
-            out.push({ u, status: r.status, len: t.length, body: t.slice(0, 120000) });
-          } catch (e) {
-            out.push({ u, err: String((e && e.message) || e) });
-          }
-        }
-        return out;
-      }, placeId);
-    } catch {
-      /* probe failed entirely */
-    }
-    const probeSummary = [];
-    for (const p of apiProbe) {
-      let reviewObjs = 0;
-      if (p.body) {
-        try {
-          const before = harvested.length;
-          harvest(JSON.parse(p.body), harvested);
-          reviewObjs = harvested.length - before;
-        } catch {
-          /* not json */
-        }
-      }
-      probeSummary.push({
-        url: p.u,
-        status: p.status,
-        len: p.len,
-        reviewObjs,
-        err: p.err,
-      });
-    }
-
-    // Dissect the panel3 payload: does it declare a TOTAL review count (e.g.
-    // 200) and ship a pagination token, or does it genuinely only contain ~7?
-    let panel3Meta = null;
-    try {
-      const p3 = apiProbe.find((p) => p.u.endsWith(`/panel3/${placeId}`));
-      if (p3 && p3.body) {
-        const j = JSON.parse(p3.body);
-        const km = j.kakaomap_review || {};
-        const bl = j.blog_review || {};
-        const kmRev = Array.isArray(km.reviews) ? km.reviews : [];
-        const blRev = Array.isArray(bl.reviews) ? bl.reviews : [];
-        panel3Meta = {
-          topKeys: Object.keys(j),
-          kakaomap_review_keys: Object.keys(km),
-          km_review_count: km.review_count ?? km.total_count ?? km.cnt ?? km.scorecnt,
-          km_reviews_len: kmRev.length,
-          km_sample_keys: kmRev[0] ? Object.keys(kmRev[0]) : null,
-          km_sample_contents: kmRev[0] ? String(kmRev[0].contents ?? "").slice(0, 60) : null,
-          km_has_next: km.has_next ?? km.hasNext ?? km.next ?? null,
-          blog_review_keys: Object.keys(bl),
-          bl_review_count: bl.review_count ?? bl.total_count ?? bl.cnt,
-          bl_reviews_len: blRev.length,
-          bl_requested_page: bl.requested_page,
-          bl_page1_ids: blRev.map((r) => r.review_id),
-        };
-      }
-    } catch {
-      /* panel3 parse failed */
-    }
-
-    // Blog reviews declare a total of ~206 with pagination fields
-    // (requested_page / requested_page_size / last_review_id). The param NAME
-    // is unknown (?page= was ignored), so test candidates and report which one
-    // advances the page (different review_ids / requested_page=2).
-    let pageProbe = [];
-    try {
-      pageProbe = await page.evaluate(async (id) => {
-        const base = `https://place-api.map.kakao.com/places/panel3/${id}`;
+      reviewTab = await page.evaluate(async (id) => {
         const H = { pf: "web", Accept: "application/json" };
-        // Read page-1 cursor values that the API itself handed us.
-        let lastId = "";
-        let lastAt = "";
-        let page1ids = [];
-        try {
-          const j0 = await (await fetch(base, { headers: H })).json();
-          const bl0 = j0.blog_review || {};
-          lastId = bl0.last_review_id ?? "";
-          lastAt = bl0.last_registered_at ?? "";
-          page1ids = (bl0.reviews || []).map((x) => x.review_id);
-        } catch {}
-        const eat = encodeURIComponent(lastAt);
-        const out = [{ note: "page1", lastId, lastAt, page1ids }];
-        const gets = [
-          `?blog_review_last_review_id=${lastId}&blog_review_last_registered_at=${eat}`,
-          `?last_review_id=${lastId}&last_registered_at=${eat}`,
-          `?blog_review_last_review_id=${lastId}`,
-          `?blog_last_review_id=${lastId}&blog_last_registered_at=${eat}`,
-          `?blog_review_requested_page=2&blog_review_requested_page_size=20`,
-        ];
-        for (const q of gets) {
+        const get = async (u) => {
           try {
-            const j = await (await fetch(base + q, { headers: H })).json();
-            const bl = j.blog_review || {};
-            const revs = bl.reviews || [];
-            out.push({
-              method: "GET",
-              q,
-              requested_page: bl.requested_page,
-              len: revs.length,
-              ids: revs.map((x) => x.review_id).slice(0, 4),
-            });
+            const r = await fetch(u, { headers: H });
+            const t = await r.text();
+            let j = null;
+            try {
+              j = JSON.parse(t);
+            } catch {}
+            return { status: r.status, len: t.length, j };
           } catch (e) {
-            out.push({ method: "GET", q, err: String((e && e.message) || e) });
+            return { err: String((e && e.message) || e) };
           }
-        }
-        // POST body variants (server may read requested_page / cursor from body).
-        const posts = [
-          { requested_page: 2, requested_page_size: 20 },
-          { blog_review: { requested_page: 2, requested_page_size: 20 } },
-          { blog_review: { last_review_id: lastId, last_registered_at: lastAt } },
+        };
+        const dissect = (j) => {
+          if (!j || typeof j !== "object") return null;
+          const revs = Array.isArray(j.reviews)
+            ? j.reviews
+            : Array.isArray(j.items)
+            ? j.items
+            : Array.isArray(j.list)
+            ? j.list
+            : [];
+          return {
+            topKeys: Object.keys(j),
+            total: j.total_count ?? j.review_count ?? j.count ?? j.total,
+            has_next: j.has_next ?? j.hasNext,
+            page: j.page,
+            len: revs.length,
+            sample_keys: revs[0] ? Object.keys(revs[0]) : null,
+            sample_contents: revs[0]
+              ? String(revs[0].contents ?? revs[0].content ?? "").slice(0, 60)
+              : null,
+            first_ids: revs.slice(0, 3).map((r) => r.review_id ?? r.id),
+          };
+        };
+        const kmBase = `https://place-api.map.kakao.com/places/tab/reviews/kakaomap/${id}`;
+        const blBase = `https://place-api.map.kakao.com/places/tab/reviews/blog/${id}`;
+        const out = {};
+        const km1 = await get(`${kmBase}?order=RECOMMENDED&only_photo_review=false`);
+        out.kakaomap_p1 = { status: km1.status, len: km1.len, ...dissect(km1.j), err: km1.err };
+        const j1 = km1.j || {};
+        out.kakaomap_nextFields = {
+          has_next: j1.has_next,
+          next: j1.next,
+          cursor: j1.cursor,
+          last_review_id: j1.last_review_id,
+          page: j1.page,
+        };
+        const nextTok = j1.next ?? j1.cursor ?? j1.last_review_id ?? "";
+        const kmCands = [
+          `?order=RECOMMENDED&only_photo_review=false&page=2`,
+          `?order=RECOMMENDED&only_photo_review=false&page_size=100`,
+          `?order=LATEST&only_photo_review=false&page=2`,
+          `?order=RECOMMENDED&only_photo_review=false&next=${encodeURIComponent(nextTok)}`,
         ];
-        for (const body of posts) {
-          try {
-            const j = await (
-              await fetch(base, {
-                method: "POST",
-                headers: { ...H, "Content-Type": "application/json" },
-                body: JSON.stringify(body),
-              })
-            ).json();
-            const bl = j.blog_review || {};
-            const revs = bl.reviews || [];
-            out.push({
-              method: "POST",
-              body,
-              requested_page: bl.requested_page,
-              len: revs.length,
-              ids: revs.map((x) => x.review_id).slice(0, 4),
-            });
-          } catch (e) {
-            out.push({ method: "POST", body, err: String((e && e.message) || e) });
-          }
+        out.kakaomap_pageProbe = [];
+        for (const q of kmCands) {
+          const r = await get(kmBase + q);
+          out.kakaomap_pageProbe.push({
+            q,
+            status: r.status,
+            len: r.len,
+            first_ids: dissect(r.j)?.first_ids,
+          });
         }
+        const bl1 = await get(`${blBase}?order=RECOMMENDED&only_photo_review=false`);
+        out.blog_p1 = { status: bl1.status, len: bl1.len, ...dissect(bl1.j), err: bl1.err };
         return out;
       }, placeId);
-    } catch {
-      /* page probe failed */
+    } catch (e) {
+      reviewTab = { err: String((e && e.message) || e) };
     }
 
     // Some Kakao pages ship data server-side (in the HTML) instead of via XHR.
@@ -462,9 +377,7 @@ async function scrapeKakao(placeId) {
         bodyLen,
         jsonHosts: Array.from(hosts),
         embedded,
-        apiProbe: probeSummary,
-        panel3Meta,
-        pageProbe,
+        reviewTab,
         loadReqLog,
         apiLog: apiLog.slice(0, 40),
       },
