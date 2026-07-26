@@ -9,19 +9,12 @@ import type {
   PlaceSearchResult,
 } from "@/lib/reviews/types";
 
-const ALL_PLATFORMS: Platform[] = ["kakao", "naver", "google", "web"];
+const ALL_PLATFORMS: Platform[] = ["kakao", "naver", "google"];
 
 const META: Record<
   Platform,
   { label: string; short: string; dot: string; solid: string; soft: string }
 > = {
-  web: {
-    label: "네이버 검색",
-    short: "네이버검색",
-    dot: "bg-blue-500",
-    solid: "bg-blue-600 text-white border-blue-600",
-    soft: "text-blue-600 dark:text-blue-400",
-  },
   kakao: {
     label: "카카오맵",
     short: "카카오",
@@ -135,7 +128,7 @@ export default function ReviewClient() {
   const [query, setQuery] = useState("");
   // 네이버맵는 Apify(유료 크레딧) 호출이라 기본 언체크로 두어, 사용자가
   // 원할 때만 켜서 크레딧을 아낀다. (카카오·네이버검색은 무료라 기본 선택.)
-  const [selected, setSelected] = useState<Platform[]>(["kakao", "web"]);
+  const [selected, setSelected] = useState<Platform[]>(["kakao"]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [candidates, setCandidates] = useState<PlaceSearchResult[]>([]);
   const [chosen, setChosen] = useState<PlaceSearchResult | null>(null);
@@ -277,9 +270,6 @@ export default function ReviewClient() {
                 <span className={active ? "font-medium" : "text-muted"}>
                   {META[p].label}
                 </span>
-                {p === "web" && (
-                  <span className="text-[11px] text-muted">(검색 스니펫)</span>
-                )}
               </button>
             );
           })}
@@ -483,15 +473,6 @@ function PlatformCard({
         </span>
       </div>
 
-      {/* '네이버 검색'은 검색 스니펫이라 리뷰 본문이 아님을 명시 */}
-      {platform === "web" && ok && (
-        <div className="border-b border-line bg-amber-50/60 px-5 py-2.5 text-xs leading-relaxed text-amber-800 dark:bg-amber-950/25 dark:text-amber-300/90">
-          ⓘ 네이버 <b>검색 결과 요약(스니펫)</b>입니다 — 리뷰 본문이 아니라 웹에
-          이 장소가 언급된 조각이라 업체정보·예약·메뉴 등이 섞일 수 있어요. 리뷰
-          본문 분석은 <b>네이버맵·카카오</b>를 권장합니다.
-        </div>
-      )}
-
       {!ok && (
         <div className="px-5 py-4 text-sm text-muted">
           <p className="leading-relaxed">{error}</p>
@@ -689,7 +670,7 @@ function HowToUse() {
     {
       n: 1,
       title: "데이터 수집",
-      desc: "카카오맵·네이버맵·구글맵 그리고 네이버 검색(스니펫)을 통해 리뷰 데이터를 수집합니다.",
+      desc: "카카오맵·네이버맵·구글맵을 통해 리뷰 데이터를 수집합니다.",
       icon: <PinIcon />,
       box: "border-sky-200 bg-sky-50/70 dark:border-sky-900/50 dark:bg-sky-950/30",
       chip: "bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300",

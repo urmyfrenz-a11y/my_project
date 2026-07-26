@@ -1,4 +1,3 @@
-import { webCollect, webSearchPlaces } from "./adapters/web";
 import { kakaoCollect, kakaoSearchPlaces } from "./adapters/kakao";
 import { naverCollect } from "./adapters/naver";
 import { googleCollect } from "./adapters/google";
@@ -10,7 +9,6 @@ const COLLECTORS: Record<
   Platform,
   (q: string, place?: PlaceSearchResult) => Promise<CollectResult>
 > = {
-  web: webCollect,
   kakao: kakaoCollect,
   naver: naverCollect,
   google: googleCollect,
@@ -99,10 +97,7 @@ function rankRelevant(
 export async function searchPlaces(
   query: string,
 ): Promise<PlaceSearchResult[]> {
-  const settled = await Promise.allSettled([
-    webSearchPlaces(),
-    kakaoSearchPlaces(query),
-  ]);
+  const settled = await Promise.allSettled([kakaoSearchPlaces(query)]);
   const all = settled.flatMap((s) => (s.status === "fulfilled" ? s.value : []));
   return rankRelevant(query, all);
 }

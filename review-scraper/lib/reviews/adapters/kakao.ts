@@ -152,9 +152,8 @@ function arr(v: unknown): unknown[] {
 // NOTE: A Playwright worker was trialed to page past Kakao's ~7-review cap,
 // but Kakao's place page ships no review XHR and the map-app UI is too heavy to
 // drive reliably on free infra — and Kakao's high review counts are mostly
-// links to external blog posts that the "네이버 검색" source already collects.
-// So we use the fast panel payload (star + blog, ~7) and rely on Naver search
-// for volume.
+// links to external blog posts. So we use the fast panel payload (star + blog,
+// ~7) and rely on 네이버맵·구글맵 for review volume.
 async function kakaoGetReviews(placeId: string): Promise<UnifiedReview[]> {
   return kakaoGetReviewsPanel(placeId);
 }

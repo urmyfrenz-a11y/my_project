@@ -26,10 +26,20 @@ Vercel, Google Cloud, Kakao Developers 등 웹 콘솔 작업을 안내할 때는
   적음. **카카오는 panel3(별점+블로그, ~7개)만 사용.** (Vercel의 KAKAO_WORKER_URL/
   KAKAO_WORKER_TOKEN 환경변수와 Render kakao-worker 서비스는 지워도 됨 — 선택.)
 
-## '인터넷 검색' = 네이버 검색 오픈API
-`review-scraper` 의 "네이버 검색" 소스는 네이버 검색 오픈API(무료 25,000건/일,
-과금 없음)를 쓴다. 환경변수 `NAVER_SEARCH_CLIENT_ID`/`NAVER_SEARCH_CLIENT_SECRET`.
-(Bing/DuckDuckGo 스크래핑은 Vercel 데이터센터 IP가 차단돼 폴백만 하고 실동작 안 함.)
+## 구글맵 리뷰 = Apify 액터 (네이버맵과 동일 방식)
+`review-scraper` 의 "구글맵" 소스는 Apify 액터
+`compass/google-maps-reviews-scraper` 를 서버리스에서 `run-sync-get-dataset-items`
+로 동기 호출한다. 최신 100개 캡, 별점·작성일·작성자 포함. **네이버맵과 같은
+`APIFY_TOKEN`(같은 $5/월 무료 크레딧)을 공유**한다. 옵트인(체크박스 켤 때만 호출).
+어댑터: `lib/reviews/adapters/google.ts`. 입력 형식(검색 URL vs placeId)은
+`buildInput()` 한 곳에서 조정. (공식 Google Places API는 장소당 리뷰 최대 5개라
+분석용으론 부적합해 쓰지 않음.)
+
+## (폐기) '네이버 검색' 스니펫 소스 — 삭제됨
+과거 "네이버 검색"(네이버 검색 오픈API 스니펫) 소스가 있었으나, 리뷰 본문이 아닌
+검색 스니펫이라 분석 왜곡 우려로 **완전히 제거**했다(`adapters/web.ts` 삭제,
+Platform 타입에서 `web` 제거). Vercel의 `NAVER_SEARCH_CLIENT_ID`/`SECRET`
+환경변수는 이제 미사용(지워도 됨 — 선택). 현재 소스는 카카오맵·네이버맵·구글맵 3종.
 
 ## 배포 트리거(중요)
 `review-scraper` (Vercel map-review)와 두 워커(Render) 모두 **`main` 브랜치 push

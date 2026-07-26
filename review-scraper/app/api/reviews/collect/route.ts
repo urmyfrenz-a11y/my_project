@@ -9,7 +9,7 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const ALL: Platform[] = ["web", "kakao", "naver", "google"];
+const ALL: Platform[] = ["kakao", "naver", "google"];
 
 export async function POST(req: Request) {
   let body: {

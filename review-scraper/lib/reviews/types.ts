@@ -2,10 +2,9 @@
 // The whole point of this project: 3 platforms return 3 totally different
 // shapes, and everything downstream (API + UI) speaks ONLY this vocabulary.
 
-export type Platform = "web" | "kakao" | "naver" | "google";
+export type Platform = "kakao" | "naver" | "google";
 
 export const PLATFORM_LABELS: Record<Platform, string> = {
-  web: "인터넷 검색",
   kakao: "카카오맵",
   naver: "네이버맵",
   google: "구글맵",

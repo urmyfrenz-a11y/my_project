@@ -354,8 +354,8 @@ async function naverViaApify(query: string): Promise<CollectResult> {
     };
   }
   // maxPlacesPerKeyword: 1 → only the top-matching place (no other stores).
-  // includeBlogReviews: false → blog reviews are handled by the "네이버 검색"
-  // source; here we only want the place's visitor reviews.
+  // includeBlogReviews: false → we only want the place's visitor reviews, not
+  // external blog posts.
   // maxItems=100 caps the collection at 100 newest reviews (≈$0.10,
   // pay-per-result) so the free $5/mo lasts ~50 collections. reviewSort NEWEST
   // → most recent first. The run timeout returns partial results if a big place

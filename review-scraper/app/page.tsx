@@ -1,11 +1,10 @@
-// 장소 리뷰 수집기 — 카카오맵 · 네이버 검색 · 네이버맵
+// 장소 리뷰 수집기 — 카카오맵 · 네이버맵 · 구글맵
 import ReviewClient from "./ReviewClient";
 
 const SOURCES = [
   { label: "카카오맵", dot: "bg-amber-400" },
   { label: "네이버맵", dot: "bg-emerald-500" },
   { label: "구글맵", dot: "bg-red-500" },
-  { label: "네이버 검색", dot: "bg-blue-500" },
 ];
 
 export default function Home() {
@@ -71,13 +70,8 @@ export default function Home() {
               이용하시기 바랍니다.
             </p>
             <p>
-              네이버 검색은 네이버에서 제공하는 API의 제약으로 인해 검색 스니펫만
-              불러옵니다. 따라서 스니펫 데이터를 그대로 분석에 사용할 경우 데이터
-              분석 과정에 왜곡이 발생할 수 있습니다.
-            </p>
-            <p>
-              네이버맵 리뷰는 API 호출 월간 한도를 초과할 경우 리뷰 데이터를
-              가져오지 못할 수 있습니다.
+              네이버맵과 구글맵 리뷰는 API 호출 월간 한도를 초과할 경우 리뷰
+              데이터를 가져오지 못할 수 있습니다.
             </p>
           </div>
         </footer>
