@@ -303,34 +303,70 @@ async function scrapeKakao(placeId) {
     let pageProbe = [];
     try {
       pageProbe = await page.evaluate(async (id) => {
-        const cands = [
-          "?requested_page=2&requested_page_size=20",
-          "?blog_review_page=2",
-          "?blog_page=2",
-          "?blogReviewPage=2",
-          "?page=2&size=20",
-          "?blog_review.requested_page=2",
-          "?brp=2&brps=20",
+        const base = `https://place-api.map.kakao.com/places/panel3/${id}`;
+        const H = { pf: "web", Accept: "application/json" };
+        // Read page-1 cursor values that the API itself handed us.
+        let lastId = "";
+        let lastAt = "";
+        let page1ids = [];
+        try {
+          const j0 = await (await fetch(base, { headers: H })).json();
+          const bl0 = j0.blog_review || {};
+          lastId = bl0.last_review_id ?? "";
+          lastAt = bl0.last_registered_at ?? "";
+          page1ids = (bl0.reviews || []).map((x) => x.review_id);
+        } catch {}
+        const eat = encodeURIComponent(lastAt);
+        const out = [{ note: "page1", lastId, lastAt, page1ids }];
+        const gets = [
+          `?blog_review_last_review_id=${lastId}&blog_review_last_registered_at=${eat}`,
+          `?last_review_id=${lastId}&last_registered_at=${eat}`,
+          `?blog_review_last_review_id=${lastId}`,
+          `?blog_last_review_id=${lastId}&blog_last_registered_at=${eat}`,
+          `?blog_review_requested_page=2&blog_review_requested_page_size=20`,
         ];
-        const out = [];
-        for (const q of cands) {
+        for (const q of gets) {
           try {
-            const r = await fetch(
-              `https://place-api.map.kakao.com/places/panel3/${id}${q}`,
-              { headers: { pf: "web", Accept: "application/json" } }
-            );
-            const j = await r.json();
+            const j = await (await fetch(base + q, { headers: H })).json();
             const bl = j.blog_review || {};
-            const revs = Array.isArray(bl.reviews) ? bl.reviews : [];
+            const revs = bl.reviews || [];
             out.push({
+              method: "GET",
               q,
-              status: r.status,
               requested_page: bl.requested_page,
               len: revs.length,
               ids: revs.map((x) => x.review_id).slice(0, 4),
             });
           } catch (e) {
-            out.push({ q, err: String((e && e.message) || e) });
+            out.push({ method: "GET", q, err: String((e && e.message) || e) });
+          }
+        }
+        // POST body variants (server may read requested_page / cursor from body).
+        const posts = [
+          { requested_page: 2, requested_page_size: 20 },
+          { blog_review: { requested_page: 2, requested_page_size: 20 } },
+          { blog_review: { last_review_id: lastId, last_registered_at: lastAt } },
+        ];
+        for (const body of posts) {
+          try {
+            const j = await (
+              await fetch(base, {
+                method: "POST",
+                headers: { ...H, "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+              })
+            ).json();
+            const bl = j.blog_review || {};
+            const revs = bl.reviews || [];
+            out.push({
+              method: "POST",
+              body,
+              requested_page: bl.requested_page,
+              len: revs.length,
+              ids: revs.map((x) => x.review_id).slice(0, 4),
+            });
+          } catch (e) {
+            out.push({ method: "POST", body, err: String((e && e.message) || e) });
           }
         }
         return out;
