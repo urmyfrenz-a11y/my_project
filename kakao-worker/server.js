@@ -460,8 +460,15 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 // harvests for a placeId — which APIs fire, counts, timing, sample reviews.
 //   /debug?placeId=23985599
 app.get("/debug", async (req, res) => {
-  const placeId = String(req.query.placeId || "").trim();
-  if (!placeId) return res.status(400).json({ error: "placeId query required" });
+  let placeId = String(req.query.placeId || "").trim();
+  const query = String(req.query.q || "").trim();
+  try {
+    if (!placeId && query) placeId = String((await resolvePlaceId(query)) || "");
+  } catch {
+    /* resolve failed */
+  }
+  if (!placeId)
+    return res.status(400).json({ error: "placeId or q query required (q needs KAKAO_REST_API_KEY)" });
   try {
     const out = await scrapeKakao(placeId);
     res.json({
