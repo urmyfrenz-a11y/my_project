@@ -35,6 +35,15 @@ Vercel, Google Cloud, Kakao Developers 등 웹 콘솔 작업을 안내할 때는
 `review-scraper` (Vercel map-review)와 두 워커(Render) 모두 **`main` 브랜치 push
 시 자동 배포**된다. 즉 저장소 어디를 커밋해도 Vercel/Render가 다시 빌드된다.
 
+### Deploy Hook — 사용자에게 배포 요청 시 반드시 이 링크를 제공할 것
+샌드박스는 `api.vercel.com` 에 접근할 수 없으므로 **배포는 사용자가 직접 Deploy
+Hook 링크를 눌러야** 트리거된다. 커밋/푸시를 마친 뒤에는 **항상 아래 정확한 링크를
+그대로 제공**한다(클릭 경로 설명 금지, 링크 누락 금지):
+
+https://api.vercel.com/v1/integrations/deploy/prj_R4AcYGYDBQrtR6AlCKe7T3UUuKkR/nOo4Kixwl7
+
+브라우저 주소창에 붙여넣어 열면 `{"job":{...}}` JSON 응답이 뜨면 정상 트리거된 것.
+
 ## 주요 콘솔 직접 링크 (map-review 프로젝트)
 - 프로젝트 홈: https://vercel.com/hichul-kim-s-projects/map-review
 - 배포 목록(재배포는 여기서): https://vercel.com/hichul-kim-s-projects/map-review/deployments
