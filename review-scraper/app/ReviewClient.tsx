@@ -678,8 +678,8 @@ function HowToUse() {
     },
     {
       n: 2,
-      title: "데이터 다운로드와 전처리",
-      desc: "수집한 데이터를 다운로드 받고 분석에 사용할 데이터와 사용하지 않을 데이터를 결정합니다.",
+      title: "데이터 다운로드",
+      desc: "수집한 데이터를 txt 파일로 다운로드 받으세요.",
       icon: <DownloadIcon className="h-4 w-4" />,
       box: "border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/25",
       chip: "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300",
