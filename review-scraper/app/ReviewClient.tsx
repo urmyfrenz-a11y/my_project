@@ -225,7 +225,7 @@ export default function ReviewClient() {
                     setChosen(null);
                   }
                 }}
-                placeholder="장소명을 입력하세요 (예: 스타벅스 뉴코아강남점)"
+                placeholder="장소명을 입력하세요 (예: 커피에반하다 광교호수공원점)"
                 className="w-full rounded-xl bg-transparent py-3 pl-11 pr-3 text-[15px] outline-none placeholder:text-muted"
               />
             </div>
@@ -272,9 +272,6 @@ export default function ReviewClient() {
                 </span>
                 {p === "web" && (
                   <span className="text-[11px] text-muted">(검색 스니펫)</span>
-                )}
-                {p === "naver" && (
-                  <span className="text-[11px] text-muted">(방문자 리뷰·유료)</span>
                 )}
               </button>
             );
@@ -687,8 +684,8 @@ function EmptyState() {
       </div>
       <p className="text-sm font-medium">장소를 검색해 리뷰를 모아보세요</p>
       <p className="mt-1 text-xs text-muted">
-        가게 이름을 입력하면 일치하는 장소 후보를 보여드려요. 정확한 곳을 고르면
-        요약과 함께 전체 리뷰를 txt 파일로 내려받을 수 있습니다.
+        정확한 가게 이름을 입력하면 카카오맵, 네이버맵의 리뷰를 txt 파일로
+        다운로드 받을 수 있습니다.
       </p>
     </div>
   );
