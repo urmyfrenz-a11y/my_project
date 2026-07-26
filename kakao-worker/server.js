@@ -152,6 +152,23 @@ async function scrapeKakao(placeId) {
       }
     });
 
+    // Capture EVERY kakao request (URL + method + POST body), not just JSON
+    // responses — the review-tab API may serve a content-type our response
+    // handler skips. This is the ground truth for where the 34 reviews load.
+    const reqLog = [];
+    page.on("request", (req) => {
+      try {
+        const u = req.url();
+        if (/kakao/.test(u) && /place-api|review|comment|panel|graphql|list/i.test(u)) {
+          reqLog.push({
+            m: req.method(),
+            url: u.slice(0, 220),
+            pd: (req.postData() || "").slice(0, 160),
+          });
+        }
+      } catch {}
+    });
+
     // Navigate straight to the 후기 (visitor-review) tab. The #review hash makes
     // the SPA fetch the FULL review list — the home view (panel3) only ships ~3,
     // but the review tab has the real count (e.g. 34). #blogreview = the 206
@@ -205,6 +222,11 @@ async function scrapeKakao(placeId) {
       await page.waitForTimeout(900);
       stable = harvested.length === before ? stable + 1 : 0;
     }
+
+    // Snapshot the organic requests made during load + review-tab scroll,
+    // BEFORE our own probes add noise. The 34-review endpoint (if it fired)
+    // is in here.
+    const loadReqLog = reqLog.slice(0, 80);
 
     // Direct API probe from *inside* the browser (same-origin cookies + pf:web
     // header). The place page shows only a ~7 summary; the full review list
@@ -443,6 +465,7 @@ async function scrapeKakao(placeId) {
         apiProbe: probeSummary,
         panel3Meta,
         pageProbe,
+        loadReqLog,
         apiLog: apiLog.slice(0, 40),
       },
     };
