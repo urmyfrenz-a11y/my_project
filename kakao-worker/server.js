@@ -152,38 +152,35 @@ async function scrapeKakao(placeId) {
       }
     });
 
-    // Load the standalone place detail page — this renders the place info +
-    // review tabs (the bare map viewer at map.kakao.com/?itemId= never mounts
-    // the review panel, which is why the old target harvested nothing).
-    const target =
+    // Navigate straight to the 후기 (visitor-review) tab. The #review hash makes
+    // the SPA fetch the FULL review list — the home view (panel3) only ships ~3,
+    // but the review tab has the real count (e.g. 34). #blogreview = the 206
+    // blog reviews. This is where the real review API fires.
+    const base =
       process.env.KAKAO_URL_TEMPLATE?.replace("{id}", placeId) ||
       `https://place.map.kakao.com/${placeId}`;
-    await page.goto(target, {
+    const hash = process.env.KAKAO_TAB_HASH || "#review";
+    await page.goto(`${base}${hash}`, {
       waitUntil: "domcontentloaded",
       timeout: 30000,
     });
-    await page.waitForTimeout(6000);
+    await page.waitForTimeout(5000);
+    // Backup: click the 후기 tab by its visible label in case the hash alone
+    // didn't switch the SPA to the review view.
+    for (const label of ["후기", "리뷰"]) {
+      await page
+        .getByText(label, { exact: true })
+        .first()
+        .click({ timeout: 1500 })
+        .catch(() => {});
+    }
+    await page.waitForTimeout(2500);
     pageUrl = page.url();
     pageTitle = (await page.title().catch(() => "")) || "";
     const bodyLen = await page
       .evaluate(() => document.body?.innerText?.length ?? 0)
       .catch(() => 0);
     console.log(`[nav] placeId=${placeId} url=${pageUrl} title="${pageTitle}" bodyLen=${bodyLen} harvested=${harvested.length}`);
-
-    // Try to focus the review tab so the review list mounts.
-    for (const name of [/후기/, /리뷰/, /블로그/]) {
-      await page
-        .getByRole("tab", { name })
-        .first()
-        .click({ timeout: 1500 })
-        .catch(() => {});
-      await page
-        .getByRole("link", { name })
-        .first()
-        .click({ timeout: 1500 })
-        .catch(() => {});
-    }
-    await page.waitForTimeout(1500);
 
     // Scroll + "더보기" until the harvest stops growing, we hit the cap, or we
     // run out of time budget.
