@@ -149,70 +149,130 @@ function arr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
-async function kakaoGetReviews(placeId: string): Promise<UnifiedReview[]> {
-  return kakaoGetReviewsPanel(placeId);
-}
+const REVIEW_HEADERS = {
+  Accept: "application/json",
+  pf: "web",
+  Referer: "https://place.map.kakao.com/",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+    "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+};
 
-/* ── Playwright worker (optional, for >7 reviews) ─────────
- * panel3 caps at ~7. The kakao-worker (kakao-worker/, Render) opens the real
- * Kakao map UI in a headless browser and harvests more reviews. We call it when
- * KAKAO_WORKER_URL is set; on any failure/empty result the caller falls back to
- * the panel3 payload, so wiring the worker can only add reviews, never break. */
-interface WorkerReview {
-  reviewId?: string;
+// Cap per section, matching the ~100-latest cap used for 네이버맵/구글맵.
+const KAKAO_MAX = 100;
+
+interface KakaoTabStarReview {
+  review_id?: number | string;
+  star_rating?: number;
+  contents?: string;
+  registered_at?: string;
+  like_count?: number;
+  meta?: { owner?: { nickname?: string } };
+}
+interface KakaoTabBlogReview {
+  review_id?: number | string;
+  confirm_id?: number | string;
+  title?: string;
+  contents?: string;
   author?: string;
-  rating?: number | null;
-  text?: string;
-  createdAt?: string;
-  likeCount?: number;
-}
-interface WorkerResponse {
-  placeId?: string;
-  reviews?: WorkerReview[];
-  error?: string;
+  registered_at?: string;
+  origin_url?: string;
 }
 
-async function kakaoViaWorker(placeId: string): Promise<UnifiedReview[]> {
-  const base = config.kakao.workerUrl.replace(/\/$/, "");
-  const res = await fetchWithTimeout(
-    `${base}/collect`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(config.kakao.workerToken
-          ? { "x-worker-token": config.kakao.workerToken }
-          : {}),
-      },
-      body: JSON.stringify({ placeId }),
-    },
-    // Render free tier can cold-start slowly; stay under Vercel's 60s budget.
-    55000,
-  );
-  if (!res.ok) return [];
-  const data = (await res.json()) as WorkerResponse;
-  const seen = new Set<string>();
+/**
+ * Kakao's real review-tab API (captured from the place page's own XHR):
+ *   place-api.map.kakao.com/places/tab/reviews/{kakaomap|blog}/{id}
+ *     ?order=LATEST&only_photo_review=false[&previous_last_review_id={cursor}]
+ * Star reviews live under /kakaomap (star_rating + contents), blog reviews
+ * under /blog (title + contents + origin_url). Both page via the cursor
+ * `previous_last_review_id` = the last review_id of the previous page, looping
+ * while has_next. panel3 only ever shipped ~7; this reaches the full list.
+ */
+async function kakaoFetchTab<T extends { review_id?: number | string }>(
+  kind: "kakaomap" | "blog",
+  placeId: string,
+): Promise<T[]> {
+  const base = `https://place-api.map.kakao.com/places/tab/reviews/${kind}/${placeId}`;
+  const out: T[] = [];
+  const seenCursors = new Set<string>();
+  let cursor = "";
+  // 20-page safety bound; also stops on has_next=false / empty / no-progress.
+  for (let page = 0; page < 20 && out.length < KAKAO_MAX; page++) {
+    const url =
+      `${base}?order=LATEST&only_photo_review=false` +
+      (cursor ? `&previous_last_review_id=${encodeURIComponent(cursor)}` : "");
+    const res = await fetchWithTimeout(url, { headers: REVIEW_HEADERS });
+    if (!res.ok) break;
+    let data: { reviews?: T[]; has_next?: boolean };
+    try {
+      data = (await res.json()) as { reviews?: T[]; has_next?: boolean };
+    } catch {
+      break;
+    }
+    const batch = arr(data?.reviews) as T[];
+    if (batch.length === 0) break;
+    out.push(...batch);
+    const nextCursor = String(batch[batch.length - 1]?.review_id ?? "");
+    if (!nextCursor || seenCursors.has(nextCursor) || data.has_next === false) break;
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+  return out.slice(0, KAKAO_MAX);
+}
+
+/** Full review pull via the tab API (star + blog), paginated. */
+async function kakaoGetReviewsTab(placeId: string): Promise<UnifiedReview[]> {
   const reviews: UnifiedReview[] = [];
-  (data.reviews ?? []).forEach((r, i) => {
-    const text = String(r.text ?? "").trim();
-    if (!text) return;
-    const id = String(r.reviewId ?? `${placeId}:${i}`);
-    if (seen.has(id)) return;
+  const seen = new Set<string>();
+
+  for (const r of await kakaoFetchTab<KakaoTabStarReview>("kakaomap", placeId)) {
+    const text = String(r.contents ?? "").trim();
+    if (!text) continue; // skip photo-only
+    const id = String(r.review_id ?? `k:${reviews.length}`);
+    if (seen.has(id)) continue;
     seen.add(id);
     reviews.push({
       platform: "kakao",
       placeId,
       reviewId: id,
-      // The worker labels blog reviews "블로그"; keep that, else anonymize.
-      author: r.author === "블로그" ? "블로그" : anonymizeAuthor(r.author),
-      rating: normalizeRating(r.rating),
+      author: anonymizeAuthor(r.meta?.owner?.nickname),
+      rating: normalizeRating(r.star_rating),
       text,
-      createdAt: toIsoDate(r.createdAt),
-      likeCount: r.likeCount,
+      createdAt: toIsoDate(r.registered_at),
+      likeCount: r.like_count,
       source: "scrape",
     });
-  });
+  }
+
+  for (const r of await kakaoFetchTab<KakaoTabBlogReview>("blog", placeId)) {
+    const body = [r.title, r.contents]
+      .map((s) => String(s ?? "").trim())
+      .filter(Boolean)
+      .join(" — ");
+    if (!body) continue;
+    const id = `blog:${r.review_id ?? r.confirm_id ?? reviews.length}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    reviews.push({
+      platform: "kakao",
+      placeId,
+      reviewId: id,
+      author: "블로그",
+      rating: null,
+      text: body,
+      createdAt: toIsoDate(r.registered_at),
+      source: "scrape",
+    });
+  }
   return reviews;
+}
+
+async function kakaoGetReviews(placeId: string): Promise<UnifiedReview[]> {
+  // Prefer the tab API (full list). Fall back to panel3 (~7) only if it yields
+  // nothing (e.g. Kakao changes the tab endpoint).
+  const tab = await kakaoGetReviewsTab(placeId);
+  if (tab.length > 0) return tab;
+  return kakaoGetReviewsPanel(placeId);
 }
 
 export async function kakaoCollect(
@@ -248,20 +308,10 @@ export async function kakaoCollect(
       }
       place = candidates[0];
     }
-    // Prefer the Playwright worker (100+ reviews) when configured; if it errors
-    // or returns nothing, fall back to the panel3 payload (~7) so Kakao always
-    // returns something.
-    let reviews: UnifiedReview[] = [];
-    if (config.kakao.workerUrl) {
-      try {
-        reviews = await kakaoViaWorker(place.placeId);
-      } catch {
-        reviews = [];
-      }
-    }
-    if (reviews.length === 0) {
-      reviews = await kakaoGetReviews(place.placeId);
-    }
+    // Direct server-side pull from Kakao's review-tab API (star + blog,
+    // paginated up to 100 each). No browser worker needed — these endpoints
+    // answer plain fetch with the `pf: web` header, same as panel3.
+    const reviews = await kakaoGetReviews(place.placeId);
     // 후기(별점 리뷰) 우선, 블로그(별점 없음)는 보완용으로 뒤로 정렬. 별점만
     // 있고 본문 없는 항목은 각 수집 단계에서 이미 제외됨. (안정 정렬 = 각 그룹
     // 내부의 원래 순서는 유지)
