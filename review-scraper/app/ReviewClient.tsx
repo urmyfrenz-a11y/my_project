@@ -700,7 +700,7 @@ function HowToUse() {
     {
       n: 3,
       title: "AI 데이터 분석",
-      desc: "다운로드한 데이터를 생성형 AI(클로드, 챗GPT, Gemini)에 입력하여 리뷰 분석을 통해 인사이트를 도출합니다.",
+      desc: "다운로드한 데이터를 생성형 AI에 업로드하여 리뷰 분석을 통해 인사이트를 도출하세요.",
       icon: <SparkIcon />,
       box: "border-violet-200 bg-violet-50/70 dark:border-violet-900/50 dark:bg-violet-950/30",
       chip: "bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300",

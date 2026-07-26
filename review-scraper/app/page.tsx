@@ -62,9 +62,15 @@ export default function Home() {
           <ReviewClient />
         </div>
 
-        <footer className="mt-16 text-center text-xs text-muted">
-          작성자 정보는 익명 처리되어 표시됩니다 · 개인 · 연구 목적으로만
-          이용하시기 바랍니다.
+        <footer className="mt-16 space-y-1 text-center text-xs text-muted">
+          <p>
+            리뷰 작성자 정보는 익명 처리되어 표시됩니다 · 개인 · 연구 목적으로만
+            이용하시기 바랍니다.
+          </p>
+          <p>
+            네이버맵 리뷰의 경우는 API 호출 월간 한도를 넘을 경우 리뷰 데이터를
+            가져오지 못할 수 있습니다.
+          </p>
         </footer>
       </div>
     </main>
