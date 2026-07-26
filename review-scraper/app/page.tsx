@@ -62,15 +62,23 @@ export default function Home() {
           <ReviewClient />
         </div>
 
-        <footer className="mt-16 space-y-1 text-center text-xs text-muted">
-          <p>
-            리뷰 작성자 정보는 익명 처리되어 표시됩니다 · 개인 · 연구 목적으로만
-            이용하시기 바랍니다.
-          </p>
-          <p>
-            네이버맵 리뷰는 API 호출 월간 한도를 초과할 경우 리뷰 데이터를
-            가져오지 못할 수 있습니다.
-          </p>
+        <footer className="mt-16">
+          <p className="mb-2 text-sm font-semibold text-muted">사용시 유의사항</p>
+          <div className="space-y-2 rounded-xl border border-line p-4 text-xs leading-relaxed text-muted">
+            <p>
+              리뷰 작성자 정보는 익명 처리되어 표시됩니다 · 개인 · 연구 목적으로만
+              이용하시기 바랍니다.
+            </p>
+            <p>
+              네이버 검색은 네이버에서 제공하는 API의 제약으로 인해 검색 스니펫만
+              불러옵니다. 따라서 스니펫 데이터를 그대로 분석에 사용할 경우 데이터
+              분석 과정에 왜곡이 발생할 수 있습니다.
+            </p>
+            <p>
+              네이버맵 리뷰는 API 호출 월간 한도를 초과할 경우 리뷰 데이터를
+              가져오지 못할 수 있습니다.
+            </p>
+          </div>
         </footer>
       </div>
     </main>
