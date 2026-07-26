@@ -149,13 +149,70 @@ function arr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
-// NOTE: A Playwright worker was trialed to page past Kakao's ~7-review cap,
-// but Kakao's place page ships no review XHR and the map-app UI is too heavy to
-// drive reliably on free infra — and Kakao's high review counts are mostly
-// links to external blog posts. So we use the fast panel payload (star + blog,
-// ~7) and rely on 네이버맵·구글맵 for review volume.
 async function kakaoGetReviews(placeId: string): Promise<UnifiedReview[]> {
   return kakaoGetReviewsPanel(placeId);
+}
+
+/* ── Playwright worker (optional, for >7 reviews) ─────────
+ * panel3 caps at ~7. The kakao-worker (kakao-worker/, Render) opens the real
+ * Kakao map UI in a headless browser and harvests more reviews. We call it when
+ * KAKAO_WORKER_URL is set; on any failure/empty result the caller falls back to
+ * the panel3 payload, so wiring the worker can only add reviews, never break. */
+interface WorkerReview {
+  reviewId?: string;
+  author?: string;
+  rating?: number | null;
+  text?: string;
+  createdAt?: string;
+  likeCount?: number;
+}
+interface WorkerResponse {
+  placeId?: string;
+  reviews?: WorkerReview[];
+  error?: string;
+}
+
+async function kakaoViaWorker(placeId: string): Promise<UnifiedReview[]> {
+  const base = config.kakao.workerUrl.replace(/\/$/, "");
+  const res = await fetchWithTimeout(
+    `${base}/collect`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(config.kakao.workerToken
+          ? { "x-worker-token": config.kakao.workerToken }
+          : {}),
+      },
+      body: JSON.stringify({ placeId }),
+    },
+    // Render free tier can cold-start slowly; stay under Vercel's 60s budget.
+    55000,
+  );
+  if (!res.ok) return [];
+  const data = (await res.json()) as WorkerResponse;
+  const seen = new Set<string>();
+  const reviews: UnifiedReview[] = [];
+  (data.reviews ?? []).forEach((r, i) => {
+    const text = String(r.text ?? "").trim();
+    if (!text) return;
+    const id = String(r.reviewId ?? `${placeId}:${i}`);
+    if (seen.has(id)) return;
+    seen.add(id);
+    reviews.push({
+      platform: "kakao",
+      placeId,
+      reviewId: id,
+      // The worker labels blog reviews "블로그"; keep that, else anonymize.
+      author: r.author === "블로그" ? "블로그" : anonymizeAuthor(r.author),
+      rating: normalizeRating(r.rating),
+      text,
+      createdAt: toIsoDate(r.createdAt),
+      likeCount: r.likeCount,
+      source: "scrape",
+    });
+  });
+  return reviews;
 }
 
 export async function kakaoCollect(
@@ -191,7 +248,20 @@ export async function kakaoCollect(
       }
       place = candidates[0];
     }
-    const reviews = await kakaoGetReviews(place.placeId);
+    // Prefer the Playwright worker (100+ reviews) when configured; if it errors
+    // or returns nothing, fall back to the panel3 payload (~7) so Kakao always
+    // returns something.
+    let reviews: UnifiedReview[] = [];
+    if (config.kakao.workerUrl) {
+      try {
+        reviews = await kakaoViaWorker(place.placeId);
+      } catch {
+        reviews = [];
+      }
+    }
+    if (reviews.length === 0) {
+      reviews = await kakaoGetReviews(place.placeId);
+    }
     return {
       platform: "kakao",
       place: { ...place, reviewCount: reviews.length || place.reviewCount },

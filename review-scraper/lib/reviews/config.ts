@@ -2,6 +2,11 @@
 export const config = {
   kakao: {
     restKey: process.env.KAKAO_REST_API_KEY ?? "",
+    // Kakao's panel3 API only exposes ~7 reviews. For more, a Playwright worker
+    // (kakao-worker/, deployed on Render) drives the real map UI. When
+    // KAKAO_WORKER_URL is set we call it; otherwise we fall back to panel3 (~7).
+    workerUrl: process.env.KAKAO_WORKER_URL ?? "",
+    workerToken: process.env.KAKAO_WORKER_TOKEN ?? "",
   },
   naver: {
     // Naver has no official API for Place visitor reviews and blocks datacenter
