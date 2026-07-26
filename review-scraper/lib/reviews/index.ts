@@ -1,6 +1,7 @@
 import { webCollect, webSearchPlaces } from "./adapters/web";
 import { kakaoCollect, kakaoSearchPlaces } from "./adapters/kakao";
 import { naverCollect } from "./adapters/naver";
+import { googleCollect } from "./adapters/google";
 import type { CollectResult, Platform, PlaceSearchResult } from "./types";
 
 export * from "./types";
@@ -12,6 +13,7 @@ const COLLECTORS: Record<
   web: webCollect,
   kakao: kakaoCollect,
   naver: naverCollect,
+  google: googleCollect,
 };
 
 /** Collect reviews across the requested platforms in parallel. */

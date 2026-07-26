@@ -9,7 +9,7 @@ import type {
   PlaceSearchResult,
 } from "@/lib/reviews/types";
 
-const ALL_PLATFORMS: Platform[] = ["kakao", "web", "naver"];
+const ALL_PLATFORMS: Platform[] = ["kakao", "naver", "google", "web"];
 
 const META: Record<
   Platform,
@@ -35,6 +35,13 @@ const META: Record<
     dot: "bg-emerald-500",
     solid: "bg-emerald-600 text-white border-emerald-600",
     soft: "text-emerald-600 dark:text-emerald-400",
+  },
+  google: {
+    label: "구글맵",
+    short: "구글",
+    dot: "bg-red-500",
+    solid: "bg-red-600 text-white border-red-600",
+    soft: "text-red-600 dark:text-red-400",
   },
 };
 
@@ -682,7 +689,7 @@ function HowToUse() {
     {
       n: 1,
       title: "데이터 수집",
-      desc: "카카오맵과 네이버맵 그리고 네이버 검색(스니펫)을 통해 리뷰 데이터를 수집합니다.",
+      desc: "카카오맵·네이버맵·구글맵 그리고 네이버 검색(스니펫)을 통해 리뷰 데이터를 수집합니다.",
       icon: <PinIcon />,
       box: "border-sky-200 bg-sky-50/70 dark:border-sky-900/50 dark:bg-sky-950/30",
       chip: "bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300",

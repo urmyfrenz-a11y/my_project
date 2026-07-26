@@ -23,4 +23,11 @@ export const config = {
     workerUrl: process.env.NAVER_WORKER_URL ?? "",
     workerToken: process.env.NAVER_WORKER_TOKEN ?? "",
   },
+  google: {
+    // Google Maps has no official API for >5 reviews (the Places API caps
+    // `reviews` at 5 per place). To collect up to 100 newest reviews we reuse
+    // the same Apify token as Naver, calling the "Google Maps Reviews" actor
+    // server-side. Pay-per-result, drawn from the same $5/mo free credit.
+    apifyToken: process.env.APIFY_TOKEN ?? "",
+  },
 } as const;

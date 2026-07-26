@@ -3,8 +3,9 @@ import ReviewClient from "./ReviewClient";
 
 const SOURCES = [
   { label: "카카오맵", dot: "bg-amber-400" },
-  { label: "네이버 검색", dot: "bg-blue-500" },
   { label: "네이버맵", dot: "bg-emerald-500" },
+  { label: "구글맵", dot: "bg-red-500" },
+  { label: "네이버 검색", dot: "bg-blue-500" },
 ];
 
 export default function Home() {
@@ -40,8 +41,8 @@ export default function Home() {
             </span>
           </h1>
           <p className="mx-auto mt-3.5 max-w-lg text-[15px] leading-relaxed text-muted sm:text-base">
-            카카오맵 · 네이버 검색 · 네이버맵의 리뷰를 검색 한 번으로 모아
-            요약을 보여주고, 전체 리뷰를 txt 파일로 내려받을 수 있습니다.
+            카카오맵 · 네이버맵 · 구글맵의 리뷰를 검색 한 번으로 모아 요약을
+            보여주고, 전체 리뷰를 txt 파일로 내려받을 수 있습니다.
           </p>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
