@@ -335,7 +335,11 @@ async function scrapeKakao(placeId) {
         jsonHosts: Array.from(hosts),
         embedded,
         apiProbe: probeSummary,
-        apiLog: apiLog.slice(0, 60),
+        // Raw harvested objects so we can see the real field names and fix text
+        // extraction (harvested=222 but only 10 had text under contents/title).
+        rawSampleKeys: harvested.slice(0, 20).map((o) => Object.keys(o)),
+        rawSample: harvested.slice(0, 6),
+        apiLog: apiLog.slice(0, 40),
       },
     };
   } finally {
