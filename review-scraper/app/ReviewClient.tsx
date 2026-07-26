@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import type {
   Platform,
@@ -285,7 +285,7 @@ export default function ReviewClient() {
         </div>
       )}
 
-      {phase === "idle" && !error && <EmptyState />}
+      {phase === "idle" && !error && <HowToUse />}
 
       {phase === "searching" && <SkeletonList lines={2} />}
 
@@ -676,17 +676,78 @@ function SkeletonList({ lines }: { lines: number }) {
   );
 }
 
-function EmptyState() {
+/** 3-step "how to use" flow shown before any search. */
+function HowToUse() {
+  const steps = [
+    {
+      n: 1,
+      title: "데이터 수집",
+      desc: "카카오맵과 네이버맵 그리고 네이버 검색(스니펫)을 통해 리뷰 데이터를 수집합니다.",
+      icon: <PinIcon />,
+      box: "border-sky-200 bg-sky-50/70 dark:border-sky-900/50 dark:bg-sky-950/30",
+      chip: "bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300",
+      step: "text-sky-600 dark:text-sky-300",
+    },
+    {
+      n: 2,
+      title: "수집한 데이터 다운로드",
+      desc: "수집한 데이터를 다운로드 받고 분석에 사용할 데이터와 사용하지 않을 데이터를 결정합니다.",
+      icon: <DownloadIcon className="h-4 w-4" />,
+      box: "border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/25",
+      chip: "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300",
+      step: "text-amber-600 dark:text-amber-300",
+    },
+    {
+      n: 3,
+      title: "AI 데이터 분석",
+      desc: "다운로드한 데이터를 생성형 AI(클로드, 챗GPT, Gemini)에 입력하여 리뷰 분석을 통해 인사이트를 도출합니다.",
+      icon: <SparkIcon />,
+      box: "border-violet-200 bg-violet-50/70 dark:border-violet-900/50 dark:bg-violet-950/30",
+      chip: "bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300",
+      step: "text-violet-600 dark:text-violet-300",
+    },
+  ];
   return (
-    <div className="rounded-2xl border border-dashed border-line px-6 py-14 text-center">
-      <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-neutral-100 text-muted dark:bg-neutral-800">
-        <SearchIcon className="h-5 w-5" />
+    <div>
+      <h2 className="text-center text-base font-semibold tracking-tight sm:text-lg">
+        이렇게 활용해 보세요
+      </h2>
+      <div className="mt-5 flex flex-col items-stretch gap-2 sm:flex-row">
+        {steps.map((s, i) => (
+          <Fragment key={s.n}>
+            <div className={`flex-1 rounded-2xl border p-5 shadow-sm shadow-black/[0.02] ${s.box}`}>
+              <div className="flex items-center gap-2.5">
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${s.chip}`}
+                >
+                  {s.icon}
+                </span>
+                <div className="min-w-0">
+                  <div className={`text-[11px] font-bold tracking-wide ${s.step}`}>
+                    STEP {s.n}
+                  </div>
+                  <div className="text-sm font-semibold leading-tight">
+                    {s.title}
+                  </div>
+                </div>
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-neutral-600 dark:text-neutral-300">
+                {s.desc}
+              </p>
+            </div>
+            {i < steps.length - 1 && (
+              <div
+                aria-hidden
+                className="flex items-center justify-center text-neutral-300 dark:text-neutral-600"
+              >
+                <span className="rotate-90 sm:rotate-0">
+                  <ChevronIcon />
+                </span>
+              </div>
+            )}
+          </Fragment>
+        ))}
       </div>
-      <p className="text-sm font-medium">장소를 검색해 리뷰를 모아보세요</p>
-      <p className="mt-1 text-xs text-muted">
-        정확한 가게 이름을 입력하면 카카오맵, 네이버맵의 리뷰를 txt 파일로
-        다운로드 받을 수 있습니다.
-      </p>
     </div>
   );
 }
@@ -745,6 +806,16 @@ function ChevronIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+function SparkIcon() {
+  // Two four-point sparkles — a light "AI" glyph.
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+      <path d="M11 2.5c.34 3.2 1.8 4.66 5 5-3.2.34-4.66 1.8-5 5-.34-3.2-1.8-4.66-5-5 3.2-.34 4.66-1.8 5-5Z" />
+      <path d="M18.5 13c.2 1.7 1 2.5 2.7 2.7-1.7.2-2.5 1-2.7 2.7-.2-1.7-1-2.5-2.7-2.7 1.7-.2 2.5-1 2.7-2.7Z" />
     </svg>
   );
 }
