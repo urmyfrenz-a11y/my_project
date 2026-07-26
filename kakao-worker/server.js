@@ -152,12 +152,12 @@ async function scrapeKakao(placeId) {
       }
     });
 
-    // Load the main map app's place panel — that's where the paginating
-    // review list actually lives (place.map.kakao.com/{id} is a thin page with
-    // no review XHR).
+    // Load the standalone place detail page — this renders the place info +
+    // review tabs (the bare map viewer at map.kakao.com/?itemId= never mounts
+    // the review panel, which is why the old target harvested nothing).
     const target =
       process.env.KAKAO_URL_TEMPLATE?.replace("{id}", placeId) ||
-      `https://map.kakao.com/?itemId=${placeId}`;
+      `https://place.map.kakao.com/${placeId}`;
     await page.goto(target, {
       waitUntil: "domcontentloaded",
       timeout: 30000,
@@ -207,6 +207,63 @@ async function scrapeKakao(placeId) {
       }
       await page.waitForTimeout(900);
       stable = harvested.length === before ? stable + 1 : 0;
+    }
+
+    // Direct API probe from *inside* the browser (same-origin cookies + pf:web
+    // header). The place page shows only a ~7 summary; the full review list
+    // lives behind a paginated API. Probe candidate endpoints, harvest any that
+    // return review-like objects, and report a summary in /debug so we can see
+    // which endpoint (if any) serves more than 7.
+    let apiProbe = [];
+    try {
+      apiProbe = await page.evaluate(async (id) => {
+        const urls = [
+          `https://place-api.map.kakao.com/places/panel3/${id}`,
+          `https://place-api.map.kakao.com/places/panel3/${id}?page=2`,
+          `https://place-api.map.kakao.com/places/panel3/${id}?page=1&size=100`,
+          `https://place-api.map.kakao.com/places/main/v/${id}`,
+          `https://place-api.map.kakao.com/places/${id}/comments`,
+          `https://place-api.map.kakao.com/places/${id}/reviews`,
+          `https://place-api.map.kakao.com/places/${id}/kakaomap_reviews`,
+          `https://place.map.kakao.com/commentlist/v/${id}`,
+          `https://place.map.kakao.com/commentlist/v/${id}/0`,
+        ];
+        const out = [];
+        for (const u of urls) {
+          try {
+            const r = await fetch(u, {
+              headers: { pf: "web", Accept: "application/json" },
+            });
+            const t = await r.text();
+            out.push({ u, status: r.status, len: t.length, body: t.slice(0, 120000) });
+          } catch (e) {
+            out.push({ u, err: String((e && e.message) || e) });
+          }
+        }
+        return out;
+      }, placeId);
+    } catch {
+      /* probe failed entirely */
+    }
+    const probeSummary = [];
+    for (const p of apiProbe) {
+      let reviewObjs = 0;
+      if (p.body) {
+        try {
+          const before = harvested.length;
+          harvest(JSON.parse(p.body), harvested);
+          reviewObjs = harvested.length - before;
+        } catch {
+          /* not json */
+        }
+      }
+      probeSummary.push({
+        url: p.u,
+        status: p.status,
+        len: p.len,
+        reviewObjs,
+        err: p.err,
+      });
     }
 
     // Some Kakao pages ship data server-side (in the HTML) instead of via XHR.
@@ -277,6 +334,7 @@ async function scrapeKakao(placeId) {
         bodyLen,
         jsonHosts: Array.from(hosts),
         embedded,
+        apiProbe: probeSummary,
         apiLog: apiLog.slice(0, 60),
       },
     };
