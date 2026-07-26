@@ -288,10 +288,55 @@ async function scrapeKakao(placeId) {
           blog_review_keys: Object.keys(bl),
           bl_review_count: bl.review_count ?? bl.total_count ?? bl.cnt,
           bl_reviews_len: blRev.length,
+          bl_requested_page: bl.requested_page,
+          bl_page1_ids: blRev.map((r) => r.review_id),
         };
       }
     } catch {
       /* panel3 parse failed */
+    }
+
+    // Blog reviews declare a total of ~206 with pagination fields
+    // (requested_page / requested_page_size / last_review_id). The param NAME
+    // is unknown (?page= was ignored), so test candidates and report which one
+    // advances the page (different review_ids / requested_page=2).
+    let pageProbe = [];
+    try {
+      pageProbe = await page.evaluate(async (id) => {
+        const cands = [
+          "?requested_page=2&requested_page_size=20",
+          "?blog_review_page=2",
+          "?blog_page=2",
+          "?blogReviewPage=2",
+          "?page=2&size=20",
+          "?blog_review.requested_page=2",
+          "?brp=2&brps=20",
+        ];
+        const out = [];
+        for (const q of cands) {
+          try {
+            const r = await fetch(
+              `https://place-api.map.kakao.com/places/panel3/${id}${q}`,
+              { headers: { pf: "web", Accept: "application/json" } }
+            );
+            const j = await r.json();
+            const bl = j.blog_review || {};
+            const revs = Array.isArray(bl.reviews) ? bl.reviews : [];
+            out.push({
+              q,
+              status: r.status,
+              requested_page: bl.requested_page,
+              len: revs.length,
+              ids: revs.map((x) => x.review_id).slice(0, 4),
+            });
+          } catch (e) {
+            out.push({ q, err: String((e && e.message) || e) });
+          }
+        }
+        return out;
+      }, placeId);
+    } catch {
+      /* page probe failed */
     }
 
     // Some Kakao pages ship data server-side (in the HTML) instead of via XHR.
@@ -364,6 +409,7 @@ async function scrapeKakao(placeId) {
         embedded,
         apiProbe: probeSummary,
         panel3Meta,
+        pageProbe,
         apiLog: apiLog.slice(0, 40),
       },
     };
