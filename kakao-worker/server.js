@@ -266,6 +266,34 @@ async function scrapeKakao(placeId) {
       });
     }
 
+    // Dissect the panel3 payload: does it declare a TOTAL review count (e.g.
+    // 200) and ship a pagination token, or does it genuinely only contain ~7?
+    let panel3Meta = null;
+    try {
+      const p3 = apiProbe.find((p) => p.u.endsWith(`/panel3/${placeId}`));
+      if (p3 && p3.body) {
+        const j = JSON.parse(p3.body);
+        const km = j.kakaomap_review || {};
+        const bl = j.blog_review || {};
+        const kmRev = Array.isArray(km.reviews) ? km.reviews : [];
+        const blRev = Array.isArray(bl.reviews) ? bl.reviews : [];
+        panel3Meta = {
+          topKeys: Object.keys(j),
+          kakaomap_review_keys: Object.keys(km),
+          km_review_count: km.review_count ?? km.total_count ?? km.cnt ?? km.scorecnt,
+          km_reviews_len: kmRev.length,
+          km_sample_keys: kmRev[0] ? Object.keys(kmRev[0]) : null,
+          km_sample_contents: kmRev[0] ? String(kmRev[0].contents ?? "").slice(0, 60) : null,
+          km_has_next: km.has_next ?? km.hasNext ?? km.next ?? null,
+          blog_review_keys: Object.keys(bl),
+          bl_review_count: bl.review_count ?? bl.total_count ?? bl.cnt,
+          bl_reviews_len: blRev.length,
+        };
+      }
+    } catch {
+      /* panel3 parse failed */
+    }
+
     // Some Kakao pages ship data server-side (in the HTML) instead of via XHR.
     // Harvest from embedded JSON blobs too.
     let embedded = { nextData: 0, inlineBlobs: 0, keys: [] };
@@ -335,10 +363,7 @@ async function scrapeKakao(placeId) {
         jsonHosts: Array.from(hosts),
         embedded,
         apiProbe: probeSummary,
-        // Raw harvested objects so we can see the real field names and fix text
-        // extraction (harvested=222 but only 10 had text under contents/title).
-        rawSampleKeys: harvested.slice(0, 20).map((o) => Object.keys(o)),
-        rawSample: harvested.slice(0, 6),
+        panel3Meta,
         apiLog: apiLog.slice(0, 40),
       },
     };
