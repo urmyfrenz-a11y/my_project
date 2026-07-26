@@ -262,6 +262,14 @@ export async function kakaoCollect(
     if (reviews.length === 0) {
       reviews = await kakaoGetReviews(place.placeId);
     }
+    // 후기(별점 리뷰) 우선, 블로그(별점 없음)는 보완용으로 뒤로 정렬. 별점만
+    // 있고 본문 없는 항목은 각 수집 단계에서 이미 제외됨. (안정 정렬 = 각 그룹
+    // 내부의 원래 순서는 유지)
+    reviews.sort((a, b) => {
+      const aBlog = a.author === "블로그" || a.rating === null ? 1 : 0;
+      const bBlog = b.author === "블로그" || b.rating === null ? 1 : 0;
+      return aBlog - bBlog;
+    });
     return {
       platform: "kakao",
       place: { ...place, reviewCount: reviews.length || place.reviewCount },
