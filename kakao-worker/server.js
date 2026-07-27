@@ -301,8 +301,28 @@ async function scrapeKakao(placeId) {
             first_ids: dissect(r.j)?.first_ids,
           });
         }
-        const bl1 = await get(`${blBase}?order=RECOMMENDED&only_photo_review=false`);
+        const bl1 = await get(`${blBase}?order=LATEST&only_photo_review=false`);
         out.blog_p1 = { status: bl1.status, len: bl1.len, ...dissect(bl1.j), err: bl1.err };
+        // Blog pagination probe: which cursor param advances past page 1?
+        const bj = bl1.j || {};
+        const bRevs = Array.isArray(bj.reviews) ? bj.reviews : [];
+        const bLastArr = String(bRevs[bRevs.length - 1]?.review_id ?? ""); // last item in array
+        const bLastTop = String(bj.last_review_id ?? ""); // API's own cursor field
+        const bLastAt = encodeURIComponent(String(bj.last_registered_at ?? ""));
+        out.blog_cursorFields = { last_review_id: bj.last_review_id, last_registered_at: bj.last_registered_at, requested_page: bj.requested_page };
+        const blCands = [
+          `?order=LATEST&only_photo_review=false&previous_last_review_id=${bLastArr}`,
+          `?order=LATEST&only_photo_review=false&previous_last_review_id=${bLastTop}`,
+          `?order=LATEST&only_photo_review=false&previous_last_review_id=${bLastTop}&previous_last_registered_at=${bLastAt}`,
+          `?order=LATEST&only_photo_review=false&last_review_id=${bLastTop}&last_registered_at=${bLastAt}`,
+          `?order=LATEST&only_photo_review=false&requested_page=2`,
+        ];
+        out.blog_page1_ids = bRevs.slice(0, 3).map((r) => r.review_id);
+        out.blog_pageProbe = [];
+        for (const q of blCands) {
+          const r = await get(blBase + q);
+          out.blog_pageProbe.push({ q, len: dissect(r.j)?.len, first_ids: dissect(r.j)?.first_ids });
+        }
         return out;
       }, placeId);
     } catch (e) {
