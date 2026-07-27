@@ -181,41 +181,61 @@ interface KakaoTabBlogReview {
 
 /**
  * Kakao's real review-tab API (captured from the place page's own XHR):
- *   place-api.map.kakao.com/places/tab/reviews/{kakaomap|blog}/{id}
- *     ?order=LATEST&only_photo_review=false[&previous_last_review_id={cursor}]
+ *   place-api.map.kakao.com/places/tab/reviews/{kakaomap|blog}/{id}?order=LATEST&only_photo_review=false
  * Star reviews live under /kakaomap (star_rating + contents), blog reviews
- * under /blog (title + contents + origin_url). Both page via the cursor
- * `previous_last_review_id` = the last review_id of the previous page, looping
- * while has_next. panel3 only ever shipped ~7; this reaches the full list.
+ * under /blog (title + contents + origin_url). The two sections paginate with
+ * DIFFERENT cursors (verified empirically):
+ *   • kakaomap → &previous_last_review_id={last review_id of the page}
+ *   • blog     → &last_review_id={resp.last_review_id}&last_registered_at={resp.last_registered_at}
+ * Loop until a page repeats / empties / has_next=false, capped at KAKAO_MAX.
+ * panel3 only ever shipped ~7; this reaches the full list.
  */
+interface KakaoTabResponse<T> {
+  reviews?: T[];
+  has_next?: boolean;
+  last_review_id?: number | string;
+  last_registered_at?: string;
+}
+
 async function kakaoFetchTab<T extends { review_id?: number | string }>(
   kind: "kakaomap" | "blog",
   placeId: string,
 ): Promise<T[]> {
-  const base = `https://place-api.map.kakao.com/places/tab/reviews/${kind}/${placeId}`;
+  const base = `https://place-api.map.kakao.com/places/tab/reviews/${kind}/${placeId}?order=LATEST&only_photo_review=false`;
   const out: T[] = [];
-  const seenCursors = new Set<string>();
-  let cursor = "";
+  const seen = new Set<string>();
+  let query = "";
   // 20-page safety bound; also stops on has_next=false / empty / no-progress.
   for (let page = 0; page < 20 && out.length < KAKAO_MAX; page++) {
-    const url =
-      `${base}?order=LATEST&only_photo_review=false` +
-      (cursor ? `&previous_last_review_id=${encodeURIComponent(cursor)}` : "");
-    const res = await fetchWithTimeout(url, { headers: REVIEW_HEADERS });
+    const res = await fetchWithTimeout(base + query, { headers: REVIEW_HEADERS });
     if (!res.ok) break;
-    let data: { reviews?: T[]; has_next?: boolean };
+    let data: KakaoTabResponse<T>;
     try {
-      data = (await res.json()) as { reviews?: T[]; has_next?: boolean };
+      data = (await res.json()) as KakaoTabResponse<T>;
     } catch {
       break;
     }
     const batch = arr(data?.reviews) as T[];
     if (batch.length === 0) break;
     out.push(...batch);
-    const nextCursor = String(batch[batch.length - 1]?.review_id ?? "");
-    if (!nextCursor || seenCursors.has(nextCursor) || data.has_next === false) break;
-    seenCursors.add(nextCursor);
-    cursor = nextCursor;
+    if (data.has_next === false) break;
+
+    // Build the next-page cursor (source-specific).
+    let next = "";
+    if (kind === "kakaomap") {
+      const last = String(batch[batch.length - 1]?.review_id ?? "");
+      if (last) next = `&previous_last_review_id=${encodeURIComponent(last)}`;
+    } else {
+      const last = String(data.last_review_id ?? batch[batch.length - 1]?.review_id ?? "");
+      const at = String(data.last_registered_at ?? "");
+      if (last)
+        next =
+          `&last_review_id=${encodeURIComponent(last)}` +
+          (at ? `&last_registered_at=${encodeURIComponent(at)}` : "");
+    }
+    if (!next || seen.has(next)) break; // no cursor / no progress
+    seen.add(next);
+    query = next;
   }
   return out.slice(0, KAKAO_MAX);
 }
