@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f5f6f8;
+  --fg: #10131a;
+  --card: #ffffff;
+  --border: #e6e8ee;
+  --muted: #6b7280;
+  --brand: #2563eb;
+  --brand-fg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0a0b0f;
+    --fg: #f2f3f5;
+    --card: #14161d;
+    --border: #262932;
+    --muted: #9aa0aa;
+    --brand: #3b82f6;
+    --brand-fg: #ffffff;
+  }
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-card: var(--card);
+  --color-line: var(--border);
+  --color-muted: var(--muted);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-fg);
+  --font-sans:
+    "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI",
+    "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--brand);
+  color: #fff;
+}
