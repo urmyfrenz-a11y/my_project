@@ -78,8 +78,12 @@ export function toISODate(raw: string | null): string | null {
   if (!raw) return null;
   const digits = raw.replace(/[^0-9]/g, "");
   if (digits.length < 8) return null;
-  const iso = `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
-  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : null;
+  const y = Number(digits.slice(0, 4));
+  const m = Number(digits.slice(4, 6));
+  const d = Number(digits.slice(6, 8));
+  // 실제 달력 날짜만 허용(자유텍스트에서 엉뚱한 숫자를 날짜로 오인하는 것 방지)
+  if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
 }
 
 const ONGOING_HINTS = ["상시", "수시", "소진", "예산", "연중", "별도", "제한없"];
