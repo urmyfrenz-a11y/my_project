@@ -27,6 +27,10 @@ export default function SearchClient({
   const regionsByProvince = useMemo(() => {
     const map: Record<Province, Region[]> = { 서울: [], 경기: [] };
     for (const r of regions) map[r.province]?.push(r);
+    // 가나다순 정렬 (행정코드 순이 아니라 찾기 쉽게)
+    for (const p of PROVINCES) {
+      map[p].sort((a, b) => a.district.localeCompare(b.district, "ko"));
+    }
     return map;
   }, [regions]);
 
