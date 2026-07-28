@@ -42,19 +42,19 @@ export const SOURCES: SourceDef[] = [
   },
   {
     key: "nipa",
-    name: "NIPA",
+    name: "NIPA(과기정통부)",
     site: "nipa.kr",
-    kind: "crawl",
+    kind: "api",
     status: "planned",
-    note: "AI/ICT/SW 관련 대형 사업. 공식 API 미확인 → 크롤링",
+    note: "AI/ICT/SW. NIPA 자체 API 없음 → 과기정통부_사업공고 API(data.go.kr 15074634)로 커버. 활용신청 필요(계정 키 공유)",
   },
   {
     key: "kocca",
     name: "KOCCA",
     site: "kocca.kr",
-    kind: "crawl",
+    kind: "api",
     status: "planned",
-    note: "콘텐츠 관련. 공식 API 미확인 → 크롤링",
+    note: "콘텐츠. 한국콘텐츠진흥원_지원사업공고 API(data.go.kr 15134251). 활용신청 필요(계정 키 공유)",
   },
   {
     key: "sbiz24",
@@ -62,6 +62,6 @@ export const SOURCES: SourceDef[] = [
     site: "sbiz24.kr",
     kind: "crawl",
     status: "planned",
-    note: "소진공 자체 공고 + 지자체·유관기관 통합조회. 공식 API 없음 → 크롤링",
+    note: "소진공 자체 공고 + 지자체·유관기관 통합조회. 공식 API 없음 → 크롤링(별도 워커)",
   },
 ];
