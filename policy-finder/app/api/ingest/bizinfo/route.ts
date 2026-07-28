@@ -8,10 +8,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// 기업마당 API → 정규화된 공고 목록을 JSON 으로 반환(가져오기 전용).
-//   GET|POST /api/ingest/bizinfo?token=INGEST_TOKEN[&cnt=100]
-// 실제 DB 적재는 관리자(MCP)가 이 응답을 받아 수행한다 → service_role 불필요.
-// regions 마스터는 public read(anon)로 읽는다.
+// 통합 수집 라우트 — "스타트업·소상공인 지원사업"
+//   GET|POST /api/ingest/bizinfo?token=INGEST_TOKEN[&cnt=300]
+//
+// 확정 소스(lib/sources.ts):
+//   [live/api]  bizinfo(기업마당) · kstartup(K-Startup) · bojo(보조금24)
+//   [planned/crawl] nipa · kocca · sbiz24  ← 공식 API 없어 크롤러(별도 워커) 순차 연동
+// external_id 접두어로 소스 구분(PBLN…, kstartup:, bojo:, nipa:, kocca:, sbiz:).
 async function handle(req: NextRequest) {
   const token =
     req.nextUrl.searchParams.get("token") ??
@@ -27,8 +30,9 @@ async function handle(req: NextRequest) {
     return NextResponse.json({ error: "BIZINFO_API_KEY 미설정" }, { status: 500 });
   }
 
-  const cnt = Number(req.nextUrl.searchParams.get("cnt") ?? "100");
-  const searchCnt = Number.isFinite(cnt) ? Math.min(Math.max(cnt, 1), 300) : 100;
+  // 기업마당은 "모집중 공고 전 페이지" 지향 → 기본 커버리지를 넓게(최대 500).
+  const cnt = Number(req.nextUrl.searchParams.get("cnt") ?? "300");
+  const searchCnt = Number.isFinite(cnt) ? Math.min(Math.max(cnt, 1), 500) : 300;
 
   try {
     const sb = getSupabase(); // anon, public read

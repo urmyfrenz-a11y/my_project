@@ -18,10 +18,10 @@ import {
 
 const BOJO_ENDPOINT = "https://api.odcloud.kr/api/gov24/v3/serviceList";
 
-// 소상공인/기업 대상 판별
-const BIZ_USER = /기업|소상공인|자영|법인|사업자/;
+// 스타트업·소상공인/기업 대상 판별
+const BIZ_USER = /기업|소상공인|자영|법인|사업자|창업|스타트업/;
 const BIZ_KEYWORDS =
-  /소상공인|자영업|소기업|중소기업|사업자|점포|상인|상점가|전통시장|창업/;
+  /소상공인|자영업|소기업|중소기업|사업자|점포|상인|상점가|전통시장|창업|스타트업|벤처|예비창업|초기기업|액셀러|기술개발|R&D|사업화/;
 
 type RawItem = Record<string, unknown>;
 
