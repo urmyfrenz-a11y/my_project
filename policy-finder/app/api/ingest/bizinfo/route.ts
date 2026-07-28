@@ -54,7 +54,8 @@ async function handle(req: NextRequest) {
         kstartup = await fetchKstartupPrograms({
           apiKey: ksKey,
           regions: regionLite,
-          perPage: searchCnt,
+          // perPage 가 크면 data.go.kr 게이트웨이가 502를 내는 경우가 있어 100으로 제한
+          perPage: Math.min(searchCnt, 100),
         });
       } catch (e) {
         kstartupError = e instanceof Error ? e.message : String(e);
