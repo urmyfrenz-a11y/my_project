@@ -53,6 +53,8 @@ export async function fetchBojoPrograms(opts: {
   const perPage = opts.perPage ?? 100;
   const maxPages = opts.maxPages ?? 12; // 1,075건 ≈ 11페이지 → 전량 스캔
   const out: NormalizedProgram[] = [];
+  let scanned = 0;
+  const userTypes = new Set<string>();
 
   for (let page = 1; page <= maxPages; page++) {
     const params = new URLSearchParams({
@@ -64,7 +66,7 @@ export async function fetchBojoPrograms(opts: {
     const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
     if (!res.ok) {
       if (page === 1) throw new Error(`보조금24 API 오류: HTTP ${res.status}`);
-      break; // 이후 페이지 오류는 무시하고 지금까지 것 사용
+      break;
     }
     const text = await res.text();
     let json: unknown = null;
@@ -74,15 +76,24 @@ export async function fetchBojoPrograms(opts: {
       throw new Error(`보조금24 비JSON 응답(page ${page}): ${text.slice(0, 200)}`);
     }
     const items = extractItems(json);
-    // page 1에서 0건이면 원인 파악용으로 원본 앞부분을 에러에 실어 노출
     if (page === 1 && items.length === 0) {
       throw new Error(`보조금24 데이터 없음(page 1): ${text.slice(0, 220)}`);
     }
+    scanned += items.length;
     for (const it of items) {
+      const u = (it as Record<string, unknown>)["사용자구분"];
+      if (typeof u === "string") userTypes.add(u);
       const n = normalizeItem(it, opts.regions);
       if (n) out.push(n);
     }
-    if (items.length < perPage) break; // 마지막 페이지
+    if (items.length < perPage) break;
+  }
+
+  // 전량 스캔했는데 0건이면 진단 정보를 에러로 노출(배포/필터 원인 구분용)
+  if (out.length === 0) {
+    throw new Error(
+      `보조금24 필터 후 0건 — scanned=${scanned}, 사용자구분값=[${[...userTypes].join(", ")}]`,
+    );
   }
   return out;
 }
