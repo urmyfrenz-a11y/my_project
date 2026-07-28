@@ -49,11 +49,21 @@ async function handle(req: NextRequest) {
     for (const p of raw) byId.set(p.external_id, p);
     const programs = [...byId.values()];
 
+    // DB 적재 함수 호출(SECURITY DEFINER, RLS 우회). anon 클라이언트로 호출하되
+    // secret(=INGEST_TOKEN)로 보호. service_role 불필요.
+    const { data: result, error: rpcErr } = await sb.rpc("ingest_programs", {
+      p: programs,
+      secret: expected,
+    });
+    if (rpcErr) {
+      return NextResponse.json({ error: rpcErr.message }, { status: 500 });
+    }
+
     return NextResponse.json({
       ok: true,
       fetched: raw.length,
       unique: programs.length,
-      programs,
+      result,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
