@@ -66,8 +66,18 @@ export async function fetchBojoPrograms(opts: {
       if (page === 1) throw new Error(`보조금24 API 오류: HTTP ${res.status}`);
       break; // 이후 페이지 오류는 무시하고 지금까지 것 사용
     }
-    const json: unknown = await res.json();
+    const text = await res.text();
+    let json: unknown = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error(`보조금24 비JSON 응답(page ${page}): ${text.slice(0, 200)}`);
+    }
     const items = extractItems(json);
+    // page 1에서 0건이면 원인 파악용으로 원본 앞부분을 에러에 실어 노출
+    if (page === 1 && items.length === 0) {
+      throw new Error(`보조금24 데이터 없음(page 1): ${text.slice(0, 220)}`);
+    }
     for (const it of items) {
       const n = normalizeItem(it, opts.regions);
       if (n) out.push(n);
