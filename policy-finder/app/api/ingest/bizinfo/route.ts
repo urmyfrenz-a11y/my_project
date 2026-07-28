@@ -31,12 +31,20 @@ async function handle(req: NextRequest) {
   try {
     const sb = getServiceSupabase();
 
-    const [{ data: regions }, { data: categories }] = await Promise.all([
-      sb.from("regions").select("id, province, district"),
-      sb.from("categories").select("id, name"),
-    ]);
+    const [{ data: regions, error: rErr }, { data: categories, error: cErr }] =
+      await Promise.all([
+        sb.from("regions").select("id, province, district"),
+        sb.from("categories").select("id, name"),
+      ]);
     if (!regions || !categories) {
-      return NextResponse.json({ error: "마스터 로드 실패" }, { status: 500 });
+      return NextResponse.json(
+        {
+          error: "마스터 로드 실패",
+          detail: rErr?.message || cErr?.message || "데이터 없음",
+          hint: "SUPABASE_SERVICE_ROLE_KEY 값 확인 필요할 수 있음",
+        },
+        { status: 500 },
+      );
     }
     const categoryIdByName = new Map(categories.map((c) => [c.name, c.id]));
     const regionIdByKey = new Map(
