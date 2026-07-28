@@ -1,24 +1,34 @@
 @import "tailwindcss";
 
+/* ── 흑백 기반 · 회색 포인트 (전문적·진중) ───────────────── */
 :root {
-  --bg: #f5f6f8;
-  --fg: #10131a;
+  --bg: #ffffff;
+  --fg: #17181a;
   --card: #ffffff;
-  --border: #e6e8ee;
-  --muted: #6b7280;
-  --brand: #2563eb;
-  --brand-fg: #ffffff;
+  --card-2: #fafafa;
+  --border: #e5e5e6;
+  --border-strong: #c9c9cb;
+  --muted: #6b6c70;
+  /* accent = 그래파이트(거의 검정). 라이트에서 버튼 배경 */
+  --accent: #1b1c1e;
+  --accent-fg: #ffffff;
+  /* 선택/강조 은은한 회색 틴트 */
+  --tint: #f2f2f3;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0a0b0f;
-    --fg: #f2f3f5;
-    --card: #14161d;
-    --border: #262932;
-    --muted: #9aa0aa;
-    --brand: #3b82f6;
-    --brand-fg: #ffffff;
+    --bg: #0c0c0d;
+    --fg: #eaeaec;
+    --card: #151517;
+    --card-2: #1a1a1d;
+    --border: #29292c;
+    --border-strong: #3a3a3e;
+    --muted: #909298;
+    /* 다크에서는 반전: 밝은 버튼 + 어두운 글자 (모노크롬 프라이머리) */
+    --accent: #eaeaec;
+    --accent-fg: #131315;
+    --tint: #202024;
   }
 }
 
@@ -26,13 +36,19 @@
   --color-background: var(--bg);
   --color-foreground: var(--fg);
   --color-card: var(--card);
+  --color-card2: var(--card-2);
   --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
   --color-muted: var(--muted);
-  --color-brand: var(--brand);
-  --color-brand-foreground: var(--brand-fg);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-fg);
+  --color-tint: var(--tint);
   --font-sans:
     "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI",
     "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --font-serif:
+    Georgia, "Times New Roman", "Nanum Myeongjo", "Noto Serif KR",
+    AppleMyungjo, Batang, serif;
 }
 
 html,
@@ -47,7 +63,20 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+/* 상단 미세 라벨 */
+.eyebrow {
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
 ::selection {
-  background: var(--brand);
-  color: #fff;
+  background: var(--fg);
+  color: var(--bg);
 }

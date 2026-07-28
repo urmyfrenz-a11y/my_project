@@ -125,9 +125,11 @@ export default function SearchClient({
   return (
     <div className="space-y-8">
       {/* ── 지역 선택 ─────────────────────────────── */}
-      <section className="rounded-2xl border border-line bg-card p-5 sm:p-6">
+      <section className="rounded-2xl border border-line bg-card p-6 sm:p-7">
         <div className="mb-4 flex items-baseline justify-between">
-          <h2 className="text-base font-semibold">1. 지역 선택</h2>
+          <h2 className="font-serif text-lg font-bold">
+            <span className="text-muted">1.</span> 지역 선택
+          </h2>
           <span className="text-xs text-muted">
             {selectedRegionCount > 0
               ? `${selectedRegionCount}개 선택`
@@ -137,7 +139,7 @@ export default function SearchClient({
 
         {/* 선택한 지역: 탭 넘나들며 고른 것을 한눈에 (칩 클릭 시 해제) */}
         {selectedRegionList.length > 0 && (
-          <div className="mb-4 rounded-xl bg-brand/5 p-3">
+          <div className="mb-4 rounded-xl bg-accent/5 p-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-medium text-muted">
                 선택한 지역 {selectedRegionList.length}
@@ -157,7 +159,7 @@ export default function SearchClient({
                   type="button"
                   onClick={() => toggleRegion(r.id)}
                   title="클릭하면 선택 해제"
-                  className="inline-flex items-center gap-1 rounded-full bg-brand px-2.5 py-1 text-xs font-medium text-brand-foreground hover:opacity-90"
+                  className="inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-xs font-medium text-accent-foreground hover:opacity-90"
                 >
                   <span className="opacity-80">
                     {r.province === "서울" ? "서울" : "경기"}
@@ -180,7 +182,7 @@ export default function SearchClient({
               onClick={() => setActiveProvince(p)}
               className={`rounded-md px-4 py-1.5 text-sm font-medium transition ${
                 activeProvince === p
-                  ? "bg-brand text-brand-foreground"
+                  ? "bg-accent text-accent-foreground"
                   : "text-muted hover:text-foreground"
               }`}
             >
@@ -193,7 +195,7 @@ export default function SearchClient({
           <button
             type="button"
             onClick={() => toggleAllInProvince(activeProvince)}
-            className="text-xs font-medium text-brand hover:underline"
+            className="text-xs font-medium text-accent hover:underline"
           >
             {activeProvince} 전체 선택/해제
           </button>
@@ -207,15 +209,15 @@ export default function SearchClient({
                 key={r.id}
                 className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
                   on
-                    ? "border-brand bg-brand/10 font-medium"
-                    : "border-line hover:border-brand/50"
+                    ? "border-accent bg-accent/10 font-medium"
+                    : "border-line hover:border-accent/50"
                 }`}
               >
                 <input
                   type="checkbox"
                   checked={on}
                   onChange={() => toggleRegion(r.id)}
-                  className="accent-brand"
+                  className="accent-accent"
                 />
                 {r.district}
               </label>
@@ -225,9 +227,11 @@ export default function SearchClient({
       </section>
 
       {/* ── 카테고리 선택 ─────────────────────────── */}
-      <section className="rounded-2xl border border-line bg-card p-5 sm:p-6">
+      <section className="rounded-2xl border border-line bg-card p-6 sm:p-7">
         <div className="mb-4 flex items-baseline justify-between">
-          <h2 className="text-base font-semibold">2. 카테고리 선택</h2>
+          <h2 className="font-serif text-lg font-bold">
+            <span className="text-muted">2.</span> 카테고리 선택
+          </h2>
           <span className="text-xs text-muted">
             {selectedCategories.size > 0
               ? `${selectedCategories.size}개 선택`
@@ -239,7 +243,7 @@ export default function SearchClient({
           <button
             type="button"
             onClick={toggleAllCategories}
-            className="text-xs font-medium text-brand hover:underline"
+            className="text-xs font-medium text-accent hover:underline"
           >
             전체 선택/해제
           </button>
@@ -253,15 +257,15 @@ export default function SearchClient({
                 key={c.id}
                 className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
                   on
-                    ? "border-brand bg-brand/10 font-medium"
-                    : "border-line hover:border-brand/50"
+                    ? "border-accent bg-accent/10 font-medium"
+                    : "border-line hover:border-accent/50"
                 }`}
               >
                 <input
                   type="checkbox"
                   checked={on}
                   onChange={() => toggleCategory(c.id)}
-                  className="accent-brand"
+                  className="accent-accent"
                 />
                 {c.name}
               </label>
@@ -276,7 +280,7 @@ export default function SearchClient({
           type="button"
           onClick={runSearch}
           disabled={loading}
-          className="w-full rounded-xl bg-brand py-3.5 text-center text-base font-semibold text-brand-foreground shadow-lg shadow-brand/20 transition hover:opacity-95 disabled:opacity-60"
+          className="w-full rounded-xl bg-accent py-4 text-center text-[0.95rem] font-semibold tracking-wide text-accent-foreground shadow-lg shadow-black/10 ring-1 ring-black/5 transition hover:opacity-90 disabled:opacity-60"
         >
           {loading ? "검색 중…" : "지원사업 검색"}
         </button>
@@ -313,16 +317,19 @@ function Results({
     );
   }
   return (
-    <section className="space-y-8">
-      <p className="text-sm text-muted">
-        총 <span className="font-semibold text-foreground">{total}</span>건의
-        신청 가능한 지원사업
+    <section className="space-y-10">
+      <p className="border-b border-line pb-4 text-sm text-muted">
+        신청 가능한 지원사업{" "}
+        <span className="font-serif text-xl font-bold text-foreground">
+          {total}
+        </span>
+        건
       </p>
       {grouped.map(([name, rows]) => (
         <div key={name}>
-          <h3 className="mb-3 flex items-center gap-2 text-lg font-bold">
+          <h3 className="font-serif mb-4 flex items-center gap-2.5 text-lg font-bold">
             {name}
-            <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand">
+            <span className="rounded-full border border-line px-2 py-0.5 font-sans text-xs font-medium text-muted">
               {rows.length}
             </span>
           </h3>
@@ -347,12 +354,12 @@ function ProgramCard({ row }: { row: ProgramRow }) {
         : (row.region_district ?? "지역");
 
   return (
-    <article className="flex flex-col rounded-xl border border-line bg-card p-4 transition hover:border-brand/50">
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+    <article className="flex flex-col rounded-xl border border-line bg-card p-5 transition hover:border-line-strong hover:bg-card2">
+      <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
         <Badge>{regionBadge}</Badge>
         <DdayBadge dday={dday} />
       </div>
-      <h4 className="font-semibold leading-snug">{row.title}</h4>
+      <h4 className="text-[0.95rem] font-semibold leading-snug">{row.title}</h4>
       {row.institution_name && (
         <p className="mt-1 text-xs text-muted">{row.institution_name}</p>
       )}
@@ -372,7 +379,7 @@ function ProgramCard({ row }: { row: ProgramRow }) {
             href={row.source_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-md bg-brand px-2.5 py-1 font-medium text-brand-foreground hover:opacity-90"
+            className="rounded-md bg-accent px-2.5 py-1 font-medium text-accent-foreground hover:opacity-90"
           >
             원문보기 →
           </a>
@@ -384,19 +391,20 @@ function ProgramCard({ row }: { row: ProgramRow }) {
 
 function Badge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-md border border-line px-2 py-0.5 text-xs font-medium">
+    <span className="rounded-md bg-tint px-2 py-0.5 text-xs font-medium tracking-wide text-foreground/75">
       {children}
     </span>
   );
 }
 
 function DdayBadge({ dday }: { dday: { label: string; urgent: boolean } }) {
+  // 흑백: 임박/마감은 솔리드(검정) 강조, 그 외는 얇은 아웃라인
   return (
     <span
-      className={`rounded-md px-2 py-0.5 text-xs font-semibold ${
+      className={`rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ${
         dday.urgent
-          ? "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300"
-          : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+          ? "bg-accent text-accent-foreground"
+          : "border border-line-strong text-muted"
       }`}
     >
       {dday.label}

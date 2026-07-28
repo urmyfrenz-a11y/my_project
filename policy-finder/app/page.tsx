@@ -35,16 +35,18 @@ export default async function Page() {
   const { regions, categories, error } = await loadMasters();
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:py-12">
-      <header className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+    <main className="mx-auto max-w-5xl px-4 py-10 sm:py-16">
+      <header className="mb-10 border-b border-line pb-8">
+        <p className="eyebrow">서울 · 경기 소상공인 지원사업</p>
+        <h1 className="font-serif mt-3 text-[1.75rem] font-bold leading-tight tracking-tight sm:text-4xl">
           소상공인 정책자금 찾기
         </h1>
-        <p className="mt-2 text-sm text-muted sm:text-base">
-          서울·경기 소상공인 지원사업을{" "}
+        <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted sm:text-[0.95rem]">
+          서울시·경기도 소상공인 지원사업을{" "}
           <span className="font-medium text-foreground">지역</span>과{" "}
           <span className="font-medium text-foreground">카테고리</span>로
-          검색하세요. 검색 시점 기준 신청 마감되지 않은 사업만 보여드립니다.
+          검색합니다. 검색 시점 기준 신청이 마감되지 않은 사업만 카테고리별로
+          정리해 원문 공고까지 연결합니다.
         </p>
       </header>
 
@@ -65,9 +67,10 @@ export default async function Page() {
         <SearchClient regions={regions} categories={categories} />
       )}
 
-      <footer className="mt-16 border-t border-line pt-6 text-xs text-muted">
-        데이터 출처: 기업마당(bizinfo.go.kr) 등 공공 오픈API · 각 사업의 정확한
-        내용은 반드시 원문 공고를 확인하세요.
+      <footer className="mt-20 border-t border-line pt-6 text-xs leading-relaxed text-muted">
+        데이터 출처: 기업마당(bizinfo.go.kr) 등 공공 오픈API. 게시 내용은 수집
+        시점 기준이며, 각 사업의 정확한 자격·일정·금액은 반드시 원문 공고를
+        확인하시기 바랍니다.
       </footer>
     </main>
   );
