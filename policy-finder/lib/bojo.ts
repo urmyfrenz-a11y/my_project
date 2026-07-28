@@ -42,57 +42,39 @@ function extractItems(json: unknown): RawItem[] {
   return [];
 }
 
-/** 보조금24 호출 후 소상공인/기업 대상만 정규화. */
+/** 보조금24 호출 후 소상공인/기업 대상만 정규화.
+ *  cond(한글 필드) 없이 여러 페이지를 받아 클라이언트에서 필터한다. */
 export async function fetchBojoPrograms(opts: {
   apiKey: string;
   regions: RegionLite[];
   perPage?: number;
+  maxPages?: number;
 }): Promise<NormalizedProgram[]> {
-  const params = new URLSearchParams({
-    page: "1",
-    perPage: String(opts.perPage ?? 100),
-    returnType: "JSON",
-  });
-  // 서버단 1차 필터(기업). 무시되더라도 클라이언트에서 재필터.
-  params.set("cond[사용자구분::LIKE]", "기업");
-  const url = `${BOJO_ENDPOINT}?serviceKey=${opts.apiKey}&${params.toString()}`;
+  const perPage = opts.perPage ?? 100;
+  const maxPages = opts.maxPages ?? 12; // 1,075건 ≈ 11페이지 → 전량 스캔
+  const out: NormalizedProgram[] = [];
 
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    throw new Error(`보조금24 API 오류: HTTP ${res.status} ${res.statusText}`);
+  for (let page = 1; page <= maxPages; page++) {
+    const params = new URLSearchParams({
+      page: String(page),
+      perPage: String(perPage),
+      returnType: "JSON",
+    });
+    const url = `${BOJO_ENDPOINT}?serviceKey=${opts.apiKey}&${params.toString()}`;
+    const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+    if (!res.ok) {
+      if (page === 1) throw new Error(`보조금24 API 오류: HTTP ${res.status}`);
+      break; // 이후 페이지 오류는 무시하고 지금까지 것 사용
+    }
+    const json: unknown = await res.json();
+    const items = extractItems(json);
+    for (const it of items) {
+      const n = normalizeItem(it, opts.regions);
+      if (n) out.push(n);
+    }
+    if (items.length < perPage) break; // 마지막 페이지
   }
-  const json: unknown = await res.json();
-  return extractItems(json)
-    .map((it) => normalizeItem(it, opts.regions))
-    .filter((x): x is NormalizedProgram => x !== null);
-}
-
-/** 진단용: cond/필터 없이 원본 분포 확인 */
-export async function fetchBojoDebug(apiKey: string, perPage = 100) {
-  const params = new URLSearchParams({
-    page: "1",
-    perPage: String(perPage),
-    returnType: "JSON",
-  });
-  const url = `${BOJO_ENDPOINT}?serviceKey=${apiKey}&${params.toString()}`;
-  const res = await fetch(url, { cache: "no-store" });
-  const json: unknown = await res.json();
-  const items = extractItems(json);
-  const userTypes: Record<string, number> = {};
-  for (const it of items) {
-    const u = pick(it, "사용자구분") ?? "(none)";
-    userTypes[u] = (userTypes[u] ?? 0) + 1;
-  }
-  return {
-    httpOk: res.ok,
-    total: items.length,
-    userTypes,
-    keys: items[0] ? Object.keys(items[0]) : [],
-    samples: items.slice(0, 5).map((it) => pick(it, "서비스명")),
-  };
+  return out;
 }
 
 function normalizeItem(
