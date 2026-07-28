@@ -70,6 +70,31 @@ export async function fetchBojoPrograms(opts: {
     .filter((x): x is NormalizedProgram => x !== null);
 }
 
+/** 진단용: cond/필터 없이 원본 분포 확인 */
+export async function fetchBojoDebug(apiKey: string, perPage = 100) {
+  const params = new URLSearchParams({
+    page: "1",
+    perPage: String(perPage),
+    returnType: "JSON",
+  });
+  const url = `${BOJO_ENDPOINT}?serviceKey=${apiKey}&${params.toString()}`;
+  const res = await fetch(url, { cache: "no-store" });
+  const json: unknown = await res.json();
+  const items = extractItems(json);
+  const userTypes: Record<string, number> = {};
+  for (const it of items) {
+    const u = pick(it, "사용자구분") ?? "(none)";
+    userTypes[u] = (userTypes[u] ?? 0) + 1;
+  }
+  return {
+    httpOk: res.ok,
+    total: items.length,
+    userTypes,
+    keys: items[0] ? Object.keys(items[0]) : [],
+    samples: items.slice(0, 5).map((it) => pick(it, "서비스명")),
+  };
+}
+
 function normalizeItem(
   item: RawItem,
   regions: RegionLite[],

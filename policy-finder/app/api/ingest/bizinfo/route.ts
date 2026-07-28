@@ -30,6 +30,14 @@ async function handle(req: NextRequest) {
   const cnt = Number(req.nextUrl.searchParams.get("cnt") ?? "100");
   const searchCnt = Number.isFinite(cnt) ? Math.min(Math.max(cnt, 1), 300) : 100;
 
+  // 진단: 보조금24 원본 분포 확인
+  if (req.nextUrl.searchParams.get("debug") === "bojo") {
+    const key = process.env.DATA_GO_KR_API_KEY || process.env.KSTARTUP_API_KEY;
+    if (!key) return NextResponse.json({ error: "no data.go.kr key" }, { status: 500 });
+    const { fetchBojoDebug } = await import("@/lib/bojo");
+    return NextResponse.json(await fetchBojoDebug(key, 100));
+  }
+
   try {
     const sb = getSupabase(); // anon, public read
     const { data: regions, error: rErr } = await sb
