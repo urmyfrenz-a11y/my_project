@@ -48,14 +48,9 @@ export const SOURCES: SourceDef[] = [
     status: "planned",
     note: "AI/ICT/SW. NIPA 자체 API 없음 → 과기정통부_사업공고 API(data.go.kr 15074634)로 커버. 활용신청 필요(계정 키 공유)",
   },
-  {
-    key: "kocca",
-    name: "KOCCA",
-    site: "kocca.kr",
-    kind: "api",
-    status: "planned",
-    note: "콘텐츠. 한국콘텐츠진흥원_지원사업공고 API(data.go.kr 15134251). 활용신청 필요(계정 키 공유)",
-  },
+  // KOCCA(콘텐츠) — 제외. 초점(AI/ICT/IoT)과 거리가 멀고 kocca.kr 자체 API가
+  // 수동 승인/별도 키라 마찰이 큼. 콘텐츠+기업 공고는 기업마당에 상당수 포함.
+  // 필요 시 kocca.kr OpenAPI(userOpenApiRead) 승인 후 별도 어댑터로 재추가.
   {
     key: "sbiz24",
     name: "소상공인24",
