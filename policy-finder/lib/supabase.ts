@@ -1,15 +1,15 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// 공개 기본값(policy-finder Supabase). publishable 키는 RLS 로 보호되어 브라우저
+// 노출이 안전하다(Supabase 공식). 환경변수가 있으면 그걸 우선 사용한다.
+const DEFAULT_URL = "https://wgqopzhkdbvejdzhvtej.supabase.co";
+const DEFAULT_ANON_KEY = "sb_publishable_RZpDNO6h3mi4qzMopcrz9g_x68rHony";
+
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_URL;
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_ANON_KEY;
 
 // 브라우저/서버 공용 읽기 전용 클라이언트 (RLS: public read)
 export function getSupabase(): SupabaseClient {
-  if (!url || !anonKey) {
-    throw new Error(
-      "NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY 환경변수가 설정되지 않았습니다.",
-    );
-  }
   return createClient(url, anonKey, {
     auth: { persistSession: false },
   });
