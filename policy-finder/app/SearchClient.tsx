@@ -16,7 +16,7 @@ export default function SearchClient({
   const [activeProvince, setActiveProvince] = useState<Province>("서울");
   const [selectedRegions, setSelectedRegions] = useState<Set<string>>(new Set());
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(
-    () => new Set(categories.map((c) => c.id)), // 기본 전체
+    () => new Set(), // 기본 전체 언체크 (선택 안 함 = 전체)
   );
 
   const [loading, setLoading] = useState(false);
@@ -35,6 +35,19 @@ export default function SearchClient({
   }, [regions]);
 
   const allCategoriesSelected = selectedCategories.size === categories.length;
+
+  // 선택된 지역 목록 (탭과 무관하게 항상 표시 — 광역+기초 함께)
+  const selectedRegionList = useMemo(
+    () =>
+      regions
+        .filter((r) => selectedRegions.has(r.id))
+        .sort(
+          (a, b) =>
+            a.province.localeCompare(b.province, "ko") ||
+            a.district.localeCompare(b.district, "ko"),
+        ),
+    [regions, selectedRegions],
+  );
 
   function toggleRegion(id: string) {
     setSelectedRegions((prev) => {
@@ -77,7 +90,11 @@ export default function SearchClient({
       const sb = getSupabase();
       const { data, error } = await sb.rpc("search_programs", {
         p_region_ids: [...selectedRegions],
-        p_category_ids: allCategoriesSelected ? [] : [...selectedCategories],
+        // 선택 안 함(또는 전체) = 전체 카테고리
+        p_category_ids:
+          selectedCategories.size === 0 || allCategoriesSelected
+            ? []
+            : [...selectedCategories],
       });
       if (error) throw new Error(error.message);
       setResults((data ?? []) as ProgramRow[]);
@@ -117,6 +134,43 @@ export default function SearchClient({
               : "선택 안 함 = 전체"}
           </span>
         </div>
+
+        {/* 선택한 지역: 탭 넘나들며 고른 것을 한눈에 (칩 클릭 시 해제) */}
+        {selectedRegionList.length > 0 && (
+          <div className="mb-4 rounded-xl bg-brand/5 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-medium text-muted">
+                선택한 지역 {selectedRegionList.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedRegions(new Set())}
+                className="text-xs text-muted hover:text-foreground hover:underline"
+              >
+                전체 해제
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {selectedRegionList.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => toggleRegion(r.id)}
+                  title="클릭하면 선택 해제"
+                  className="inline-flex items-center gap-1 rounded-full bg-brand px-2.5 py-1 text-xs font-medium text-brand-foreground hover:opacity-90"
+                >
+                  <span className="opacity-80">
+                    {r.province === "서울" ? "서울" : "경기"}
+                  </span>
+                  {r.district}
+                  <span aria-hidden className="ml-0.5 text-sm leading-none">
+                    ×
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="mb-4 inline-flex rounded-lg border border-line p-1">
           {PROVINCES.map((p) => (
@@ -174,31 +228,43 @@ export default function SearchClient({
       <section className="rounded-2xl border border-line bg-card p-5 sm:p-6">
         <div className="mb-4 flex items-baseline justify-between">
           <h2 className="text-base font-semibold">2. 카테고리 선택</h2>
+          <span className="text-xs text-muted">
+            {selectedCategories.size > 0
+              ? `${selectedCategories.size}개 선택`
+              : "선택 안 함 = 전체"}
+          </span>
+        </div>
+
+        <div className="mb-3">
           <button
             type="button"
             onClick={toggleAllCategories}
             className="text-xs font-medium text-brand hover:underline"
           >
-            {allCategoriesSelected ? "전체 해제" : "전체 선택"}
+            전체 선택/해제
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
           {categories.map((c) => {
             const on = selectedCategories.has(c.id);
             return (
-              <button
+              <label
                 key={c.id}
-                type="button"
-                onClick={() => toggleCategory(c.id)}
-                className={`rounded-full border px-3.5 py-1.5 text-sm transition ${
+                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
                   on
                     ? "border-brand bg-brand/10 font-medium"
-                    : "border-line text-muted hover:border-brand/50"
+                    : "border-line hover:border-brand/50"
                 }`}
               >
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() => toggleCategory(c.id)}
+                  className="accent-brand"
+                />
                 {c.name}
-              </button>
+              </label>
             );
           })}
         </div>
