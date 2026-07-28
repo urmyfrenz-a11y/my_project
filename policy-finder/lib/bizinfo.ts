@@ -84,7 +84,7 @@ export function toISODate(raw: string | null): string | null {
 
 const ONGOING_HINTS = ["상시", "수시", "소진", "예산", "연중", "별도", "제한없"];
 
-function parsePeriod(raw: string | null): {
+export function parsePeriod(raw: string | null): {
   start: string | null;
   end: string | null;
   ongoing: boolean;

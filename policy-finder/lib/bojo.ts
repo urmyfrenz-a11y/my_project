@@ -1,0 +1,113 @@
+// 보조금24 (행정안전부_대한민국 공공서비스(혜택) 정보) 어댑터
+// odcloud: https://api.odcloud.kr/api/gov24/v3/serviceList
+//   serviceKey, page, perPage, returnType=JSON, cond[필드::OP]=값
+// 응답: { currentCount, data: [ {서비스ID, 서비스명, 서비스목적요약, 서비스분야,
+//   소관기관명, 신청기한, 상세조회URL, 사용자구분, 지원대상, 지원내용 ...} ] }
+//
+// 보조금24는 대부분 복지·개인 혜택 → '사용자구분'이 기업/소상공인이거나
+// 소상공인 키워드가 있는 것만 통과시킨다.
+
+import { classifyCategory } from "./categories";
+import {
+  NormalizedProgram,
+  RegionLite,
+  parsePeriod,
+  resolveRegion,
+  stripHtml,
+} from "./bizinfo";
+
+const BOJO_ENDPOINT = "https://api.odcloud.kr/api/gov24/v3/serviceList";
+
+// 소상공인/기업 대상 판별
+const BIZ_USER = /기업|소상공인|자영|법인|사업자/;
+const BIZ_KEYWORDS =
+  /소상공인|자영업|소기업|중소기업|사업자|점포|상인|상점가|전통시장|창업/;
+
+type RawItem = Record<string, unknown>;
+
+function pick(item: RawItem, ...keys: string[]): string | null {
+  for (const k of keys) {
+    const v = item[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+    if (typeof v === "number") return String(v);
+  }
+  return null;
+}
+
+function extractItems(json: unknown): RawItem[] {
+  if (json && typeof json === "object") {
+    const d = (json as Record<string, unknown>).data;
+    if (Array.isArray(d)) return d as RawItem[];
+  }
+  return [];
+}
+
+/** 보조금24 호출 후 소상공인/기업 대상만 정규화. */
+export async function fetchBojoPrograms(opts: {
+  apiKey: string;
+  regions: RegionLite[];
+  perPage?: number;
+}): Promise<NormalizedProgram[]> {
+  const params = new URLSearchParams({
+    page: "1",
+    perPage: String(opts.perPage ?? 100),
+    returnType: "JSON",
+  });
+  // 서버단 1차 필터(기업). 무시되더라도 클라이언트에서 재필터.
+  params.set("cond[사용자구분::LIKE]", "기업");
+  const url = `${BOJO_ENDPOINT}?serviceKey=${opts.apiKey}&${params.toString()}`;
+
+  const res = await fetch(url, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`보조금24 API 오류: HTTP ${res.status} ${res.statusText}`);
+  }
+  const json: unknown = await res.json();
+  return extractItems(json)
+    .map((it) => normalizeItem(it, opts.regions))
+    .filter((x): x is NormalizedProgram => x !== null);
+}
+
+function normalizeItem(
+  item: RawItem,
+  regions: RegionLite[],
+): NormalizedProgram | null {
+  const title = pick(item, "서비스명");
+  if (!title) return null;
+
+  const userType = pick(item, "사용자구분") ?? "";
+  const summary = stripHtml(pick(item, "서비스목적요약", "지원내용"));
+  const target = pick(item, "지원대상");
+  const field = pick(item, "서비스분야");
+
+  // 소상공인/기업 대상만 통과
+  const haystack = `${title} ${summary ?? ""} ${target ?? ""} ${field ?? ""}`;
+  if (!BIZ_USER.test(userType) && !BIZ_KEYWORDS.test(haystack)) return null;
+
+  const institution = pick(item, "소관기관명");
+  const period = parsePeriod(pick(item, "신청기한"));
+  const source = pick(item, "상세조회URL");
+  const id = pick(item, "서비스ID") ?? title;
+  const category = classifyCategory(title, summary, field, target);
+
+  const region = resolveRegion(`${institution ?? ""} ${title}`, regions);
+  if (!region) return null;
+
+  return {
+    external_id: `bojo:${id}`,
+    title,
+    institution_name: institution,
+    category_name: category,
+    region_scope: region.scope,
+    province: region.province,
+    region_district: region.district,
+    summary,
+    support_amount: null,
+    apply_start: period.start,
+    apply_end: period.end,
+    is_ongoing: period.ongoing,
+    source_url: source,
+  };
+}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { fetchBizinfoPrograms, NormalizedProgram, RegionLite } from "@/lib/bizinfo";
 import { fetchKstartupPrograms } from "@/lib/kstartup";
+import { fetchBojoPrograms } from "@/lib/bojo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,25 +46,35 @@ async function handle(req: NextRequest) {
     // 소스 1: 기업마당 — 각 공고의 내용으로 지역 판정, 타지역 제외
     const raw = await fetchBizinfoPrograms({ apiKey, regions: regionLite, searchCnt });
 
-    // 소스 2: K-Startup(창업진흥원) — best-effort. 키 없거나 실패해도 진행.
+    // data.go.kr 인증키는 계정당 1개 → K-Startup·보조금24가 같은 키 공유
+    const dataGoKrKey =
+      process.env.DATA_GO_KR_API_KEY || process.env.KSTARTUP_API_KEY;
+    const perPage = Math.min(searchCnt, 100); // 대량요청 시 502 방지
+
+    // 소스 2: K-Startup(창업진흥원) — best-effort
     let kstartup: NormalizedProgram[] = [];
     let kstartupError: string | null = null;
-    const ksKey = process.env.KSTARTUP_API_KEY;
-    if (ksKey) {
+    if (dataGoKrKey) {
       try {
-        kstartup = await fetchKstartupPrograms({
-          apiKey: ksKey,
-          regions: regionLite,
-          // perPage 가 크면 data.go.kr 게이트웨이가 502를 내는 경우가 있어 100으로 제한
-          perPage: Math.min(searchCnt, 100),
-        });
+        kstartup = await fetchKstartupPrograms({ apiKey: dataGoKrKey, regions: regionLite, perPage });
       } catch (e) {
         kstartupError = e instanceof Error ? e.message : String(e);
       }
     }
 
+    // 소스 3: 보조금24(공공서비스 혜택) — best-effort. 소상공인/기업만 필터.
+    let bojo: NormalizedProgram[] = [];
+    let bojoError: string | null = null;
+    if (dataGoKrKey) {
+      try {
+        bojo = await fetchBojoPrograms({ apiKey: dataGoKrKey, regions: regionLite, perPage });
+      } catch (e) {
+        bojoError = e instanceof Error ? e.message : String(e);
+      }
+    }
+
     const byId = new Map<string, NormalizedProgram>();
-    for (const p of [...raw, ...kstartup]) byId.set(p.external_id, p);
+    for (const p of [...raw, ...kstartup, ...bojo]) byId.set(p.external_id, p);
     const programs = [...byId.values()];
 
     // DB 적재 함수 호출(SECURITY DEFINER, RLS 우회). anon 클라이언트로 호출하되
@@ -78,8 +89,9 @@ async function handle(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      fetched: { bizinfo: raw.length, kstartup: kstartup.length },
+      fetched: { bizinfo: raw.length, kstartup: kstartup.length, bojo: bojo.length },
       kstartupError,
+      bojoError,
       unique: programs.length,
       result,
     });
