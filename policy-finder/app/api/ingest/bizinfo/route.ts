@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { fetchBizinfoPrograms, NormalizedProgram, RegionLite } from "@/lib/bizinfo";
+import { fetchKstartupPrograms } from "@/lib/kstartup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,12 +42,27 @@ async function handle(req: NextRequest) {
     }
     const regionLite = regions as RegionLite[];
 
-    // 단일 피드에서 각 공고의 실제 내용(제목·해시태그·기관)으로 지역 판정.
-    // (hashtags 파라미터는 실제 필터링이 안 되어 사용하지 않음.)
+    // 소스 1: 기업마당 — 각 공고의 내용으로 지역 판정, 타지역 제외
     const raw = await fetchBizinfoPrograms({ apiKey, regions: regionLite, searchCnt });
 
+    // 소스 2: K-Startup(창업진흥원) — best-effort. 키 없거나 실패해도 진행.
+    let kstartup: NormalizedProgram[] = [];
+    let kstartupError: string | null = null;
+    const ksKey = process.env.KSTARTUP_API_KEY;
+    if (ksKey) {
+      try {
+        kstartup = await fetchKstartupPrograms({
+          apiKey: ksKey,
+          regions: regionLite,
+          perPage: searchCnt,
+        });
+      } catch (e) {
+        kstartupError = e instanceof Error ? e.message : String(e);
+      }
+    }
+
     const byId = new Map<string, NormalizedProgram>();
-    for (const p of raw) byId.set(p.external_id, p);
+    for (const p of [...raw, ...kstartup]) byId.set(p.external_id, p);
     const programs = [...byId.values()];
 
     // DB 적재 함수 호출(SECURITY DEFINER, RLS 우회). anon 클라이언트로 호출하되
@@ -61,7 +77,8 @@ async function handle(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      fetched: raw.length,
+      fetched: { bizinfo: raw.length, kstartup: kstartup.length },
+      kstartupError,
       unique: programs.length,
       result,
     });

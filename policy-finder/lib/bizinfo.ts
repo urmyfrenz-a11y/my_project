@@ -56,7 +56,7 @@ function pick(item: RawItem, ...keys: string[]): string | null {
 }
 
 // HTML 태그 제거 + 기본 엔티티 디코드 + 공백 정리
-function stripHtml(html: string | null): string | null {
+export function stripHtml(html: string | null): string | null {
   if (!html) return null;
   const text = html
     .replace(/<br\s*\/?>/gi, " ")
@@ -74,7 +74,7 @@ function stripHtml(html: string | null): string | null {
 }
 
 // "2026-07-22" | "20260722" | "2026.07.22" → "2026-07-22"
-function toISODate(raw: string | null): string | null {
+export function toISODate(raw: string | null): string | null {
   if (!raw) return null;
   const digits = raw.replace(/[^0-9]/g, "");
   if (digits.length < 8) return null;
@@ -104,7 +104,7 @@ function absoluteUrl(u: string | null): string | null {
 }
 
 // 지역 범위 판정. null 반환 = 서울·경기와 무관한 타지역 전용 공고(제외).
-function resolveRegion(
+export function resolveRegion(
   text: string,
   regions: RegionLite[],
   forcedProvince?: Province,
