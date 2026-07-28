@@ -41,19 +41,17 @@ async function handle(req: NextRequest) {
     }
     const regionLite = regions as RegionLite[];
 
-    const [seoul, gyeonggi, national] = await Promise.all([
-      fetchBizinfoPrograms({ apiKey, regions: regionLite, searchCnt, hashtags: "서울", forcedProvince: "서울" }),
-      fetchBizinfoPrograms({ apiKey, regions: regionLite, searchCnt, hashtags: "경기", forcedProvince: "경기" }),
-      fetchBizinfoPrograms({ apiKey, regions: regionLite, searchCnt }),
-    ]);
+    // 단일 피드에서 각 공고의 실제 내용(제목·해시태그·기관)으로 지역 판정.
+    // (hashtags 파라미터는 실제 필터링이 안 되어 사용하지 않음.)
+    const raw = await fetchBizinfoPrograms({ apiKey, regions: regionLite, searchCnt });
 
     const byId = new Map<string, NormalizedProgram>();
-    for (const p of [...national, ...seoul, ...gyeonggi]) byId.set(p.external_id, p);
+    for (const p of raw) byId.set(p.external_id, p);
     const programs = [...byId.values()];
 
     return NextResponse.json({
       ok: true,
-      fetched: { seoul: seoul.length, gyeonggi: gyeonggi.length, national: national.length },
+      fetched: raw.length,
       unique: programs.length,
       programs,
     });
