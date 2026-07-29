@@ -32,29 +32,42 @@ function pick(item: RawItem, ...keys: string[]): string | null {
   return null;
 }
 
-// 검색 조건(search) 후보. 실제 브라우저 요청을 최대한 그대로 미러링한다.
-// region-only(rcrtTypeCdNmList 누락)는 서버가 500 → 지원대상 필드는 반드시 포함.
-// 넓은 대상(빈 배열 = 전체) 먼저 시도, 실패하면 소상공인 한정으로 폴백.
+// 검색 조건(search). 실제 브라우저가 200 받는 요청을 그대로 미러링한다.
+// 누락 필드가 있으면 서버가 500 → 전체 필드를 채워야 한다. 지역은 코드가 실제
+// 필터: 11=서울, 31=경기. aplySeYn:"Y" = 모집중만. 지원대상/업종은 비워 전체.
 type SearchObj = Record<string, unknown>;
+
+function fullSearch(
+  rcrtTypeCdNmList: string[],
+  rcrtTypeCdNmListDisplay: string,
+): SearchObj {
+  return {
+    rcrtTypeCdNmList,
+    rcrtTypeCdNmListDisplay,
+    regionNmList: ["경기", "서울"],
+    regionNmListDisplay: "경기, 서울",
+    regionCdList: ["31", "11"],
+    departNmList: [],
+    departNmListDisplay: null,
+    tpbizCdList: [],
+    tpbizCdListDisplay: "",
+    bhis: { from: null, to: null },
+    wrkr: { from: null, to: null },
+    sls: { from: null, to: null },
+    aplySeYn: "Y",
+    sbrPbancYn: "N",
+    itrstPbancYn: "N",
+    pbancNm: "",
+    ptPbancSortBy: null,
+    bizType: null,
+    searchBox: null,
+  };
+}
+
+// 전체 대상 먼저(빈 배열=전 지원대상), 혹시 실패하면 소상공인 한정으로 폴백.
 export const SEARCH_VARIANTS: { name: string; search: SearchObj }[] = [
-  {
-    name: "all-types",
-    search: {
-      rcrtTypeCdNmList: [],
-      rcrtTypeCdNmListDisplay: "",
-      regionNmList: ["서울", "경기"],
-      regionNmListDisplay: "서울,경기",
-    },
-  },
-  {
-    name: "sosang",
-    search: {
-      rcrtTypeCdNmList: ["소상공인"],
-      rcrtTypeCdNmListDisplay: "소상공인",
-      regionNmList: ["서울", "경기"],
-      regionNmListDisplay: "서울,경기",
-    },
-  },
+  { name: "all-types", search: fullSearch([], "") },
+  { name: "sosang", search: fullSearch(["소상공인"], "소상공인") },
 ];
 
 function buildBody(search: SearchObj, startRow: number, endRow: number) {
