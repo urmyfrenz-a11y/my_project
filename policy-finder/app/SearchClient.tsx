@@ -290,8 +290,8 @@ export default function SearchClient({
         </div>
         <p className="mb-4 text-xs leading-relaxed text-muted">
           업종을 고르지 않으면 <b className="text-foreground">전업종 공통</b>{" "}
-          사업만 보여줍니다. 내 업종을 고르면 그 업종 전용 사업(예: 농림수산·관광
-          등)이 함께 표시됩니다.
+          사업만 보여줍니다. 내 업종을 고르면 그 업종 전용 사업(예: 제조업·숙박
+          음식점업 등)이 함께 표시됩니다. 업종 구분은 소상공인24와 동일 체계입니다.
         </p>
         <div className="flex flex-wrap gap-2">
           <button
