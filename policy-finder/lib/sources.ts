@@ -55,8 +55,8 @@ export const SOURCES: SourceDef[] = [
     key: "sbiz24",
     name: "소상공인24",
     site: "sbiz24.kr",
-    kind: "crawl",
-    status: "planned",
-    note: "소진공 자체 공고 + 지자체·유관기관 통합조회. 공식 API 없음 → 크롤링(별도 워커)",
+    kind: "api",
+    status: "live",
+    note: "통합공고 내부 JSON API(POST /api/combinePbanc/list). 인증키 불필요, 서울·경기 필터",
   },
 ];

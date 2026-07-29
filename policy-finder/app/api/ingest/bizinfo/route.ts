@@ -3,6 +3,7 @@ import { getSupabase } from "@/lib/supabase";
 import { fetchBizinfoPrograms, NormalizedProgram, RegionLite } from "@/lib/bizinfo";
 import { fetchKstartupPrograms } from "@/lib/kstartup";
 import { fetchBojoPrograms } from "@/lib/bojo";
+import { fetchSbiz24Programs, fetchSbiz24Raw } from "@/lib/sbiz24";
 import { classifyIndustry } from "@/lib/industry";
 
 export const runtime = "nodejs";
@@ -24,6 +25,18 @@ async function handle(req: NextRequest) {
   const expected = process.env.INGEST_TOKEN;
   if (!expected || token !== expected) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  // 진단 모드: 소상공인24 원본 응답의 필드명을 그대로 확인(DB 미적재).
+  //   GET /api/ingest/bizinfo?token=...&debug=sbiz
+  if (req.nextUrl.searchParams.get("debug") === "sbiz") {
+    try {
+      const raw = await fetchSbiz24Raw();
+      return NextResponse.json({ ok: true, sbiz24: raw });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    }
   }
 
   const apiKey = process.env.BIZINFO_API_KEY;
@@ -78,8 +91,17 @@ async function handle(req: NextRequest) {
       }
     }
 
+    // 소스 4: 소상공인24(sbiz24) — 통합공고 내부 JSON API. 인증키 불필요.
+    let sbiz: NormalizedProgram[] = [];
+    let sbizError: string | null = null;
+    try {
+      sbiz = await fetchSbiz24Programs({ regions: regionLite });
+    } catch (e) {
+      sbizError = e instanceof Error ? e.message : String(e);
+    }
+
     const byId = new Map<string, NormalizedProgram>();
-    for (const p of [...raw, ...kstartup, ...bojo]) byId.set(p.external_id, p);
+    for (const p of [...raw, ...kstartup, ...bojo, ...sbiz]) byId.set(p.external_id, p);
     const programs = [...byId.values()].map((p) => ({
       ...p,
       industry: classifyIndustry(p.title, p.summary, p.institution_name),
@@ -97,9 +119,15 @@ async function handle(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      fetched: { bizinfo: raw.length, kstartup: kstartup.length, bojo: bojo.length },
+      fetched: {
+        bizinfo: raw.length,
+        kstartup: kstartup.length,
+        bojo: bojo.length,
+        sbiz: sbiz.length,
+      },
       kstartupError,
       bojoError,
+      sbizError,
       unique: programs.length,
       result,
     });
