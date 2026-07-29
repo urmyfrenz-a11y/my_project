@@ -8,6 +8,7 @@ import { fetchEgbizRaw, fetchEgbizDiag } from "@/lib/egbiz";
 import { fetchNipaRaw } from "@/lib/nipa";
 import { fetchFanfanRaw } from "@/lib/fanfan";
 import { fetchGbsaRaw } from "@/lib/gbsa";
+import { fetchSbaRaw } from "@/lib/sba";
 import { classifyIndustry } from "@/lib/industry";
 
 export const runtime = "nodejs";
@@ -37,6 +38,16 @@ async function handle(req: NextRequest) {
   }
 
   const debug = req.nextUrl.searchParams.get("debug");
+  // 진단: 서울경제진흥원(SBA) 접수중인 사업 HTML 구조 확인(DB 미적재).
+  if (debug === "sba") {
+    try {
+      const raw = await fetchSbaRaw();
+      return NextResponse.json({ ok: true, sba: raw });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    }
+  }
   // 진단: GBSA(경기도경제과학진흥원) G-PMS 원본 응답 형식/세션 확인(DB 미적재).
   if (debug === "gbsa") {
     try {
