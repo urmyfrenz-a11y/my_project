@@ -32,21 +32,43 @@ function pick(item: RawItem, ...keys: string[]): string | null {
   return null;
 }
 
-// 서울·경기만 조회. 지원대상(rcrtTypeCdNmList)은 비워서 전 대상(소상공인+창업 등)을
-// 넓게 받고, 지역/카테고리 판정과 필터는 우리 로직으로 처리한다.
-function buildBody(startRow: number, endRow: number) {
-  return {
-    startRow,
-    endRow,
-    paging: true,
-    sortModel: [],
+// 검색 조건(search) 후보. 실제 브라우저 요청을 최대한 그대로 미러링한다.
+// region-only(rcrtTypeCdNmList 누락)는 서버가 500 → 지원대상 필드는 반드시 포함.
+// 넓은 대상(빈 배열 = 전체) 먼저 시도, 실패하면 소상공인 한정으로 폴백.
+type SearchObj = Record<string, unknown>;
+export const SEARCH_VARIANTS: { name: string; search: SearchObj }[] = [
+  {
+    name: "all-types",
     search: {
+      rcrtTypeCdNmList: [],
+      rcrtTypeCdNmListDisplay: "",
       regionNmList: ["서울", "경기"],
+      regionNmListDisplay: "서울,경기",
     },
-  };
+  },
+  {
+    name: "sosang",
+    search: {
+      rcrtTypeCdNmList: ["소상공인"],
+      rcrtTypeCdNmListDisplay: "소상공인",
+      regionNmList: ["서울", "경기"],
+      regionNmListDisplay: "서울,경기",
+    },
+  },
+];
+
+function buildBody(search: SearchObj, startRow: number, endRow: number) {
+  return { startRow, endRow, paging: true, sortModel: [], search };
 }
 
-async function callSbiz(startRow: number, endRow: number): Promise<unknown> {
+interface RawResult {
+  status: number;
+  ok: boolean;
+  json: unknown;
+  text: string;
+}
+
+async function rawCall(body: unknown): Promise<RawResult> {
   const res = await fetch(SBIZ_ENDPOINT, {
     method: "POST",
     headers: {
@@ -57,14 +79,17 @@ async function callSbiz(startRow: number, endRow: number): Promise<unknown> {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
     },
-    body: JSON.stringify(buildBody(startRow, endRow)),
+    body: JSON.stringify(body),
     cache: "no-store",
   });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`소상공인24 API 오류: HTTP ${res.status} ${t.slice(0, 160)}`);
+  const text = await res.text().catch(() => "");
+  let json: unknown = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    /* 비JSON */
   }
-  return res.json();
+  return { status: res.status, ok: res.ok, json, text };
 }
 
 // data.default 내부에서 실제 목록 배열을 찾아 반환(키 이름이 불확실해도 대응).
@@ -217,7 +242,8 @@ function normalizeItem(
   };
 }
 
-/** 소상공인24 통합공고 호출 후 정규화(서울·경기). 페이지네이션 포함. */
+/** 소상공인24 통합공고 호출 후 정규화(서울·경기). 페이지네이션 포함.
+ *  작동하는 search 형태를 자동 선택(첫 페이지에서 200+데이터가 나오는 변형). */
 export async function fetchSbiz24Programs(opts: {
   regions: RegionLite[];
   perPage?: number;
@@ -227,11 +253,31 @@ export async function fetchSbiz24Programs(opts: {
   const maxPages = opts.maxPages ?? 5; // 최대 500건 커버
   const out: NormalizedProgram[] = [];
 
-  for (let page = 0; page < maxPages; page++) {
+  // 1) 작동하는 검색 변형 찾기
+  let chosen: SearchObj | null = null;
+  const errors: string[] = [];
+  for (const v of SEARCH_VARIANTS) {
+    const r = await rawCall(buildBody(v.search, 0, perPage));
+    if (r.ok && extractItems(r.json).length > 0) {
+      chosen = v.search;
+      for (const it of extractItems(r.json)) {
+        const n = normalizeItem(it, opts.regions);
+        if (n) out.push(n);
+      }
+      break;
+    }
+    errors.push(`${v.name}:HTTP${r.status}`);
+  }
+  if (!chosen) {
+    throw new Error(`소상공인24 유효 응답 없음 (${errors.join(", ")})`);
+  }
+
+  // 2) 나머지 페이지
+  for (let page = 1; page < maxPages; page++) {
     const startRow = page * perPage;
-    const endRow = startRow + perPage;
-    const json = await callSbiz(startRow, endRow);
-    const items = extractItems(json);
+    const r = await rawCall(buildBody(chosen, startRow, startRow + perPage));
+    if (!r.ok) break;
+    const items = extractItems(r.json);
     if (items.length === 0) break;
     for (const it of items) {
       const n = normalizeItem(it, opts.regions);
@@ -242,21 +288,29 @@ export async function fetchSbiz24Programs(opts: {
   return out;
 }
 
-/** 진단용: 배포 환경에서 원본 응답 구조/필드명을 그대로 확인. */
-export async function fetchSbiz24Raw(): Promise<{
-  itemCount: number;
-  firstItemKeys: string[];
-  firstItem: RawItem | null;
-  envelopeKeys: string[];
-}> {
-  const json = await callSbiz(0, 5);
-  const items = extractItems(json);
-  const envelopeKeys =
-    json && typeof json === "object" ? Object.keys(json as object) : [];
-  return {
-    itemCount: items.length,
-    firstItemKeys: items[0] ? Object.keys(items[0]) : [],
-    firstItem: items[0] ?? null,
-    envelopeKeys,
-  };
+/** 진단용: 여러 본문 변형을 시도해 어떤 게 200+데이터를 주는지, 필드명까지 보고. */
+export async function fetchSbiz24Raw(): Promise<{ variants: unknown[] }> {
+  const variants: unknown[] = [];
+  for (const v of SEARCH_VARIANTS) {
+    try {
+      const r = await rawCall(buildBody(v.search, 0, 10));
+      const items = r.ok ? extractItems(r.json) : [];
+      variants.push({
+        variant: v.name,
+        status: r.status,
+        itemCount: items.length,
+        envelopeKeys:
+          r.json && typeof r.json === "object" ? Object.keys(r.json as object) : [],
+        firstItemKeys: items[0] ? Object.keys(items[0]) : [],
+        firstItem: items[0] ?? null,
+        errorText: r.ok ? null : r.text.slice(0, 200),
+      });
+    } catch (e) {
+      variants.push({
+        variant: v.name,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+  return { variants };
 }
