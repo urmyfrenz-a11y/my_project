@@ -18,10 +18,13 @@ import {
 
 const BOJO_ENDPOINT = "https://api.odcloud.kr/api/gov24/v3/serviceList";
 
-// 스타트업·소상공인/기업 대상 판별
-const BIZ_USER = /기업|소상공인|자영|법인|사업자|창업|스타트업/;
-const BIZ_KEYWORDS =
-  /소상공인|자영업|소기업|중소기업|사업자|점포|상인|상점가|전통시장|창업|스타트업|벤처|예비창업|초기기업|액셀러|기술개발|R&D|사업화/;
+// 스타트업·소상공인 대상 판별 (고정밀)
+// 반드시 엔티티 유형 키워드(INCLUDE)가 있어야 하고, 무관 도메인(EXCLUDE)이면 제외.
+const INCLUDE =
+  /소상공인|소공인|소상인|자영업|소기업|중소기업|1인\s?기업|스타트업|벤처기업|예비창업|창업기업|창업자|창업중심|창업\s?지원|점포|상점가|전통시장|소셜벤처|소상공|온라인\s?셀러/;
+const EXCLUDE =
+  /농업|농촌|농어|임업|산림|수산|축산|어업|어촌|귀농|귀어|양식업|영농|보훈|국가유공|참전|수계\s?주민|주민지원사업|자활|기초생활|차상위|다문화|보육|아동|청소년|노인|고령자\s?고용|장애인복지|여성가족|이재민|재해복구|산불|일자리도약|취업\s?알선|구직/;
+const BIZ_USER_STRONG = /소상공인|창업|스타트업|벤처/;
 
 type RawItem = Record<string, unknown>;
 
@@ -110,9 +113,10 @@ function normalizeItem(
   const target = pick(item, "지원대상");
   const field = pick(item, "서비스분야");
 
-  // 소상공인/기업 대상만 통과
+  // 고정밀 필터: (엔티티 유형 키워드 or 사용자구분 강신호) AND 무관 도메인 아님
   const haystack = `${title} ${summary ?? ""} ${target ?? ""} ${field ?? ""}`;
-  if (!BIZ_USER.test(userType) && !BIZ_KEYWORDS.test(haystack)) return null;
+  const included = INCLUDE.test(haystack) || BIZ_USER_STRONG.test(userType);
+  if (!included || EXCLUDE.test(haystack)) return null;
 
   const institution = pick(item, "소관기관명");
   const period = parsePeriod(pick(item, "신청기한"));
