@@ -3,6 +3,7 @@ import { getSupabase } from "@/lib/supabase";
 import { fetchBizinfoPrograms, NormalizedProgram, RegionLite } from "@/lib/bizinfo";
 import { fetchKstartupPrograms } from "@/lib/kstartup";
 import { fetchBojoPrograms } from "@/lib/bojo";
+import { classifyIndustry } from "@/lib/industry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,7 +80,10 @@ async function handle(req: NextRequest) {
 
     const byId = new Map<string, NormalizedProgram>();
     for (const p of [...raw, ...kstartup, ...bojo]) byId.set(p.external_id, p);
-    const programs = [...byId.values()];
+    const programs = [...byId.values()].map((p) => ({
+      ...p,
+      industry: classifyIndustry(p.title, p.summary, p.institution_name),
+    }));
 
     // DB 적재 함수 호출(SECURITY DEFINER, RLS 우회). anon 클라이언트로 호출하되
     // secret(=INGEST_TOKEN)로 보호. service_role 불필요.

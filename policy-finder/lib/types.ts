@@ -38,4 +38,5 @@ export interface ProgramRow {
   category_id: string | null;
   category_name: string | null;
   category_sort: number | null;
+  industry: string;
 }

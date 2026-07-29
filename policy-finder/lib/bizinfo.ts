@@ -44,6 +44,7 @@ export interface NormalizedProgram {
   apply_end: string | null;
   is_ongoing: boolean;
   source_url: string | null;
+  industry?: string; // 라우트에서 병합 후 부여
 }
 
 function pick(item: RawItem, ...keys: string[]): string | null {

@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { Category, ProgramRow, Province, Region } from "@/lib/types";
+import { INDUSTRIES } from "@/lib/industry";
 
 const PROVINCES: Province[] = ["서울", "경기"];
+const PER_PAGE = 4; // 카테고리별 페이지당 표시 수
 
 export default function SearchClient({
   regions,
@@ -18,6 +20,7 @@ export default function SearchClient({
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(
     () => new Set(), // 기본 전체 언체크 (선택 안 함 = 전체)
   );
+  const [industry, setIndustry] = useState<string | null>(null); // 내 업종(단일)
 
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -95,6 +98,7 @@ export default function SearchClient({
           selectedCategories.size === 0 || allCategoriesSelected
             ? []
             : [...selectedCategories],
+        p_industry: industry, // null = 전업종(공통)만
       });
       if (error) throw new Error(error.message);
       setResults((data ?? []) as ProgramRow[]);
@@ -274,6 +278,53 @@ export default function SearchClient({
         </div>
       </section>
 
+      {/* ── 업종 선택 ─────────────────────────────── */}
+      <section className="rounded-2xl border border-line bg-card p-6 sm:p-7">
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="font-serif text-lg font-bold">
+            <span className="text-muted">3.</span> 업종 선택
+          </h2>
+          <span className="text-xs text-muted">
+            {industry ? industry : "공통 사업만"}
+          </span>
+        </div>
+        <p className="mb-4 text-xs leading-relaxed text-muted">
+          업종을 고르지 않으면 <b className="text-foreground">전업종 공통</b>{" "}
+          사업만 보여줍니다. 내 업종을 고르면 그 업종 전용 사업(예: 농림수산·관광
+          등)이 함께 표시됩니다.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setIndustry(null)}
+            className={`rounded-full border px-3.5 py-1.5 text-sm transition ${
+              industry === null
+                ? "border-accent bg-accent/10 font-medium"
+                : "border-line text-muted hover:border-accent/50"
+            }`}
+          >
+            전업종(공통)
+          </button>
+          {INDUSTRIES.map((ind) => {
+            const on = industry === ind;
+            return (
+              <button
+                key={ind}
+                type="button"
+                onClick={() => setIndustry(on ? null : ind)}
+                className={`rounded-full border px-3.5 py-1.5 text-sm transition ${
+                  on
+                    ? "border-accent bg-accent/10 font-medium"
+                    : "border-line text-muted hover:border-accent/50"
+                }`}
+              >
+                {ind}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       {/* ── 검색 ─────────────────────────────────── */}
       <div className="sticky bottom-4 z-10">
         <button
@@ -326,21 +377,90 @@ function Results({
         건
       </p>
       {grouped.map(([name, rows]) => (
-        <div key={name}>
-          <h3 className="font-serif mb-4 flex items-center gap-2.5 text-lg font-bold">
-            {name}
-            <span className="rounded-full border border-line px-2 py-0.5 font-sans text-xs font-medium text-muted">
-              {rows.length}
-            </span>
-          </h3>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {rows.map((row) => (
-              <ProgramCard key={row.id} row={row} />
-            ))}
-          </div>
-        </div>
+        <CategorySection key={name} name={name} rows={rows} />
       ))}
     </section>
+  );
+}
+
+function CategorySection({ name, rows }: { name: string; rows: ProgramRow[] }) {
+  const [page, setPage] = useState(0);
+  const pages = Math.ceil(rows.length / PER_PAGE);
+  const start = page * PER_PAGE;
+  const shown = rows.slice(start, start + PER_PAGE);
+
+  return (
+    <div>
+      <h3 className="font-serif mb-4 flex items-center gap-2.5 text-lg font-bold">
+        {name}
+        <span className="rounded-full border border-line px-2 py-0.5 font-sans text-xs font-medium text-muted">
+          {rows.length}
+        </span>
+      </h3>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {shown.map((row) => (
+          <ProgramCard key={row.id} row={row} />
+        ))}
+      </div>
+      {pages > 1 && <Pager page={page} pages={pages} onChange={setPage} />}
+    </div>
+  );
+}
+
+function Pager({
+  page,
+  pages,
+  onChange,
+}: {
+  page: number;
+  pages: number;
+  onChange: (p: number) => void;
+}) {
+  // 현재 페이지 주변만 노출(윈도우)
+  const win = 2;
+  const nums: number[] = [];
+  for (let i = Math.max(0, page - win); i <= Math.min(pages - 1, page + win); i++)
+    nums.push(i);
+
+  const btn =
+    "min-w-8 rounded-md border px-2 py-1 text-xs font-medium transition disabled:opacity-40";
+  return (
+    <div className="mt-4 flex items-center justify-center gap-1">
+      <button
+        type="button"
+        className={`${btn} border-line text-muted hover:border-accent/50`}
+        onClick={() => onChange(page - 1)}
+        disabled={page === 0}
+      >
+        ‹
+      </button>
+      {nums[0] > 0 && <span className="px-1 text-xs text-muted">…</span>}
+      {nums.map((i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => onChange(i)}
+          className={`${btn} ${
+            i === page
+              ? "border-accent bg-accent text-accent-foreground"
+              : "border-line text-muted hover:border-accent/50"
+          }`}
+        >
+          {i + 1}
+        </button>
+      ))}
+      {nums[nums.length - 1] < pages - 1 && (
+        <span className="px-1 text-xs text-muted">…</span>
+      )}
+      <button
+        type="button"
+        className={`${btn} border-line text-muted hover:border-accent/50`}
+        onClick={() => onChange(page + 1)}
+        disabled={page === pages - 1}
+      >
+        ›
+      </button>
+    </div>
   );
 }
 
@@ -357,6 +477,9 @@ function ProgramCard({ row }: { row: ProgramRow }) {
     <article className="flex flex-col rounded-xl border border-line bg-card p-5 transition hover:border-line-strong hover:bg-card2">
       <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
         <Badge>{regionBadge}</Badge>
+        {row.industry && row.industry !== "전업종" && (
+          <Badge>{row.industry}</Badge>
+        )}
         <DdayBadge dday={dday} />
       </div>
       <h4 className="text-[0.95rem] font-semibold leading-snug">{row.title}</h4>
