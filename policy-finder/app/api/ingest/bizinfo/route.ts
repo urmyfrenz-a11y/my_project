@@ -4,7 +4,7 @@ import { fetchBizinfoPrograms, NormalizedProgram, RegionLite } from "@/lib/bizin
 import { fetchKstartupPrograms } from "@/lib/kstartup";
 import { fetchBojoPrograms } from "@/lib/bojo";
 import { fetchSbiz24Programs, fetchSbiz24Raw, SBIZ_BUILD_TAG } from "@/lib/sbiz24";
-import { fetchEgbizRaw } from "@/lib/egbiz";
+import { fetchEgbizRaw, fetchEgbizDiag } from "@/lib/egbiz";
 import { classifyIndustry } from "@/lib/industry";
 
 export const runtime = "nodejs";
@@ -39,6 +39,18 @@ async function handle(req: NextRequest) {
     try {
       const raw = await fetchEgbizRaw();
       return NextResponse.json({ ok: true, egbiz: raw });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    }
+  }
+  // 진단: egbiz 정규화 결과(경기 선별) 카운트/샘플. DB 미적재.
+  if (debug === "egbiz2") {
+    try {
+      const sb = getSupabase();
+      const { data: regions } = await sb.from("regions").select("id, province, district");
+      const diag = await fetchEgbizDiag((regions ?? []) as RegionLite[]);
+      return NextResponse.json({ ok: true, egbiz: diag });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return NextResponse.json({ ok: false, error: msg }, { status: 500 });
