@@ -5,6 +5,7 @@ import { fetchKstartupPrograms } from "@/lib/kstartup";
 import { fetchBojoPrograms } from "@/lib/bojo";
 import { fetchSbiz24Programs, fetchSbiz24Raw, SBIZ_BUILD_TAG } from "@/lib/sbiz24";
 import { fetchEgbizRaw, fetchEgbizDiag } from "@/lib/egbiz";
+import { fetchNipaRaw } from "@/lib/nipa";
 import { classifyIndustry } from "@/lib/industry";
 
 export const runtime = "nodejs";
@@ -51,6 +52,20 @@ async function handle(req: NextRequest) {
       const { data: regions } = await sb.from("regions").select("id, province, district");
       const diag = await fetchEgbizDiag((regions ?? []) as RegionLite[]);
       return NextResponse.json({ ok: true, egbiz: diag });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    }
+  }
+  // 진단: NIPA(과기정통부 사업공고) API 원본 응답/필드명 확인(DB 미적재).
+  if (debug === "nipa") {
+    const key = process.env.DATA_GO_KR_API_KEY || process.env.KSTARTUP_API_KEY;
+    if (!key) {
+      return NextResponse.json({ ok: false, error: "DATA_GO_KR_API_KEY 미설정" }, { status: 500 });
+    }
+    try {
+      const raw = await fetchNipaRaw(key);
+      return NextResponse.json({ ok: true, nipa: raw });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return NextResponse.json({ ok: false, error: msg }, { status: 500 });
