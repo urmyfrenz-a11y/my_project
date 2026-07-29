@@ -4,6 +4,7 @@ import { fetchBizinfoPrograms, NormalizedProgram, RegionLite } from "@/lib/bizin
 import { fetchKstartupPrograms } from "@/lib/kstartup";
 import { fetchBojoPrograms } from "@/lib/bojo";
 import { fetchSbiz24Programs, fetchSbiz24Raw, SBIZ_BUILD_TAG } from "@/lib/sbiz24";
+import { fetchEgbizRaw } from "@/lib/egbiz";
 import { classifyIndustry } from "@/lib/industry";
 
 export const runtime = "nodejs";
@@ -33,6 +34,16 @@ async function handle(req: NextRequest) {
   }
 
   const debug = req.nextUrl.searchParams.get("debug");
+  // 진단: 경기기업비서(egbiz) 원본 응답 형식/세션 확인(DB 미적재).
+  if (debug === "egbiz") {
+    try {
+      const raw = await fetchEgbizRaw();
+      return NextResponse.json({ ok: true, egbiz: raw });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    }
+  }
   // 진단: 소상공인24 원본 응답의 필드명/상태 확인(DB 미적재).
   if (debug === "sbizraw") {
     try {
