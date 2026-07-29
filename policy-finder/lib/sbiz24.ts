@@ -189,20 +189,11 @@ function findFirstObjectArray(node: unknown, depth: number): RawItem[] | null {
   return null;
 }
 
-// 상세 링크: 항목에 URL이 있으면 사용, 없으면 sbiz24 상세 해시 경로를 구성.
-function detailUrl(item: RawItem, sn: string | null): string | null {
-  const u = pick(
-    item,
-    "detailUrl",
-    "pbancUrl",
-    "linkUrl",
-    "dtlUrl",
-    "url",
-    "orgnztUrl",
-    "hmpgUrl",
-  );
-  if (u) return u.startsWith("http") ? u : `https://www.sbiz24.kr${u.startsWith("/") ? "" : "/"}${u}`;
-  if (sn) return `https://www.sbiz24.kr/#/combinePbancView?combinePbancSn=${sn}`;
+// 상세 링크: 외부 신청 사이트 URL이 있으면 사용, 없으면 소상공인24 통합공고 목록.
+// (통합공고 상세는 해시 라우트 SPA라 딥링크 경로가 불명확 → 안전한 목록 페이지로 폴백)
+function detailUrl(item: RawItem): string {
+  const u = pick(item, "bizAplySiteUrlAddr", "pbancUrl", "linkUrl", "url");
+  if (u && u.startsWith("http")) return u;
   return "https://www.sbiz24.kr/#/combinePbancList?combine=combine";
 }
 
@@ -210,75 +201,48 @@ function normalizeItem(
   item: RawItem,
   regions: RegionLite[],
 ): NormalizedProgram | null {
-  const title = pick(
-    item,
-    "pbancNm",
-    "combinePbancNm",
-    "bizNm",
-    "titleNm",
-    "title",
-    "sj",
-    "bsnsNm",
-  );
+  const title = pick(item, "pbancNm", "sprtBizNm", "linkPbancNm");
   if (!title) return null;
 
-  const sn = pick(
-    item,
-    "combinePbancSn",
-    "pbancSn",
-    "sn",
-    "bizSn",
-    "id",
-    "seq",
-  );
+  const sn = pick(item, "pbancSn", "unfyPbancNo", "sprtBizSn");
   const externalId = `sbiz:${sn ?? title}`;
 
-  const summary = stripHtml(
-    pick(item, "pbancCn", "bsnsSumryCn", "cn", "summary", "pbancCtnt", "dtlCn"),
-  );
-  const institution = pick(
-    item,
-    "insttNm",
-    "jrsdInsttNm",
-    "excInsttNm",
-    "deptNm",
-    "orgNm",
-    "ministryNm",
-    "sprvInsttNm",
-  );
-  const field = pick(item, "rcrtTypeCdNm", "sportRealmNm", "bizFldNm", "sportRealmLclasCodeNm");
-  const regionText =
-    pick(item, "regionNm", "areaNm", "region") ??
-    (Array.isArray(item.regionNmList) ? (item.regionNmList as string[]).join(" ") : "");
+  const summary = stripHtml(pick(item, "pbancDtlCn", "bizPrps", "sprtScaleCn"));
+  // 기관: 소관부서(departNm)·관할기관(jrsdInstNm)
+  const institution = pick(item, "departNm", "jrsdInstNm", "hstgNm");
+  // 분류 신호: 사업유형(bizType)·업종명(tpbizNm)·지원대상(rcrtTypeCdNm)
+  const bizType = pick(item, "bizType");
+  const tpbizNm = pick(item, "tpbizNm");
+  const rcrtType = pick(item, "rcrtTypeCdNm");
 
-  // 접수 기간: 개별 begin/end 필드 우선, 없으면 기간 문자열 파싱.
-  const begin = pick(
-    item,
-    "rceptBgngDe",
-    "rceptBgngDt",
-    "reqstBeginDe",
-    "aplyBgngDe",
-    "pbancRceptBgngDe",
-  );
-  const endRaw = pick(
-    item,
-    "rceptEndDe",
-    "rceptEndDt",
-    "reqstEndDe",
-    "aplyEndDe",
-    "pbancRceptEndDe",
-  );
+  // 지역: 목록 응답엔 대개 없음(전국 공단사업). 제목·기관 텍스트로 판정.
+  const regionText = [
+    pick(item, "regionNm"),
+    pick(item, "pbancRgn"),
+    pick(item, "ctpvCdNm"),
+    pick(item, "sggCdNm"),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  // 접수기간: aplyPd 문자열("2026-07-24 ~ 2026-08-07")이 실데이터. 개별 필드는 대개 null.
+  const begin = pick(item, "rcptBgngDt", "aplyPdBgngYmd", "bizBgngYmd");
+  const endRaw = pick(item, "rcptEndDt", "aplyPdEndYmd", "bizEndYmd");
   let start = toISODate(begin);
   let end = toISODate(endRaw);
   let ongoing = false;
   if (!start && !end) {
-    const p = parsePeriod(pick(item, "rceptPd", "reqstBeginEndDe", "period", "pbancPd"));
+    const p = parsePeriod(pick(item, "aplyPd", "rcptPd", "bizPd", "dscsnAplyPd"));
     start = p.start;
     end = p.end;
     ongoing = p.ongoing;
   }
 
-  const category = classifyCategory(title, summary, field);
+  // aplyPsbltySe: "신청가능" → 모집중. (요청에서 aplySeYn:"Y"로 이미 모집중만 조회)
+  const applicable = pick(item, "aplyPsbltySe");
+  const stillOpen = !applicable || applicable.includes("신청가능") || applicable.includes("가능");
+
+  const category = classifyCategory(title, bizType, tpbizNm, rcrtType);
   const region = resolveRegion(`${regionText} ${title} ${institution ?? ""}`, regions);
   if (!region) return null; // 서울·경기와 무관한 타지역 전용 → 제외
 
@@ -294,8 +258,8 @@ function normalizeItem(
     support_amount: null,
     apply_start: start,
     apply_end: end,
-    is_ongoing: ongoing || (!end && !start),
-    source_url: detailUrl(item, sn),
+    is_ongoing: (ongoing || (!end && !start)) && stillOpen,
+    source_url: detailUrl(item),
   };
 }
 
@@ -347,7 +311,7 @@ export async function fetchSbiz24Programs(opts: {
 
 /** 진단용: 여러 본문/쿠키 변형을 시도해 어떤 게 200+데이터를 주는지, 필드명까지 보고.
  *  buildTag 로 새 배포 반영 여부를 확인한다. */
-export const SBIZ_BUILD_TAG = "sbiz-v6-headers";
+export const SBIZ_BUILD_TAG = "sbiz-v7-normalized";
 
 export async function fetchSbiz24Raw(): Promise<{
   buildTag: string;

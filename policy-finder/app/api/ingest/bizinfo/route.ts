@@ -3,7 +3,7 @@ import { getSupabase } from "@/lib/supabase";
 import { fetchBizinfoPrograms, NormalizedProgram, RegionLite } from "@/lib/bizinfo";
 import { fetchKstartupPrograms } from "@/lib/kstartup";
 import { fetchBojoPrograms } from "@/lib/bojo";
-import { fetchSbiz24Programs, fetchSbiz24Raw } from "@/lib/sbiz24";
+import { fetchSbiz24Programs, fetchSbiz24Raw, SBIZ_BUILD_TAG } from "@/lib/sbiz24";
 import { classifyIndustry } from "@/lib/industry";
 
 export const runtime = "nodejs";
@@ -27,15 +27,34 @@ async function handle(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  // 진단 모드: 소상공인24 원본 응답의 필드명을 그대로 확인(DB 미적재).
-  //   GET /api/ingest/bizinfo?token=...&debug=sbiz
-  if (req.nextUrl.searchParams.get("debug") === "sbiz") {
+  const debug = req.nextUrl.searchParams.get("debug");
+  // 진단: 소상공인24 원본 응답의 필드명/상태 확인(DB 미적재).
+  if (debug === "sbizraw") {
     try {
       const raw = await fetchSbiz24Raw();
       return NextResponse.json({ ok: true, sbiz24: raw });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    }
+  }
+  // 진단: 소상공인24 정규화 결과 미리보기(제목·기관·기간·지역·카테고리). DB 미적재.
+  if (debug === "sbiz") {
+    try {
+      const sb = getSupabase();
+      const { data: regions } = await sb.from("regions").select("id, province, district");
+      const programs = await fetchSbiz24Programs({
+        regions: (regions ?? []) as RegionLite[],
+      });
+      return NextResponse.json({
+        ok: true,
+        buildTag: SBIZ_BUILD_TAG,
+        count: programs.length,
+        sample: programs.slice(0, 6),
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return NextResponse.json({ ok: false, buildTag: SBIZ_BUILD_TAG, error: msg }, { status: 500 });
     }
   }
 
