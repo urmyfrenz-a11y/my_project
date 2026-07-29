@@ -81,17 +81,24 @@ interface RawResult {
   text: string;
 }
 
-async function rawCall(body: unknown): Promise<RawResult> {
+// 브라우저가 보내던 추적 쿠키(세션 아님). 서버가 쿠키를 읽다 NPE(500) 내는지 테스트용.
+const BROWSER_COOKIE =
+  "_harry_lang=ko; WMONID=Va1PNKqudPP; NetFunnel_ID=";
+
+async function rawCall(body: unknown, cookie?: string): Promise<RawResult> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "Accept-Language": "ko,en-US;q=0.9,en;q=0.8",
+    Referer: "https://www.sbiz24.kr/",
+    Origin: "https://www.sbiz24.kr",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+  };
+  if (cookie) headers.Cookie = cookie;
   const res = await fetch(SBIZ_ENDPOINT, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      Referer: "https://www.sbiz24.kr/",
-      Origin: "https://www.sbiz24.kr",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
-    },
+    headers,
     body: JSON.stringify(body),
     cache: "no-store",
   });
@@ -301,15 +308,26 @@ export async function fetchSbiz24Programs(opts: {
   return out;
 }
 
-/** 진단용: 여러 본문 변형을 시도해 어떤 게 200+데이터를 주는지, 필드명까지 보고. */
-export async function fetchSbiz24Raw(): Promise<{ variants: unknown[] }> {
+/** 진단용: 여러 본문/쿠키 변형을 시도해 어떤 게 200+데이터를 주는지, 필드명까지 보고.
+ *  buildTag 로 새 배포 반영 여부를 확인한다. */
+export const SBIZ_BUILD_TAG = "sbiz-v4-icn1-cookie";
+
+export async function fetchSbiz24Raw(): Promise<{
+  buildTag: string;
+  variants: unknown[];
+}> {
+  const probes: { name: string; search: SearchObj; cookie?: string }[] = [
+    { name: "all-types", search: SEARCH_VARIANTS[0].search },
+    { name: "sosang", search: SEARCH_VARIANTS[1].search },
+    { name: "all-types+cookie", search: SEARCH_VARIANTS[0].search, cookie: BROWSER_COOKIE },
+  ];
   const variants: unknown[] = [];
-  for (const v of SEARCH_VARIANTS) {
+  for (const p of probes) {
     try {
-      const r = await rawCall(buildBody(v.search, 0, 10));
+      const r = await rawCall(buildBody(p.search, 0, 10), p.cookie);
       const items = r.ok ? extractItems(r.json) : [];
       variants.push({
-        variant: v.name,
+        variant: p.name,
         status: r.status,
         itemCount: items.length,
         envelopeKeys:
@@ -320,10 +338,10 @@ export async function fetchSbiz24Raw(): Promise<{ variants: unknown[] }> {
       });
     } catch (e) {
       variants.push({
-        variant: v.name,
+        variant: p.name,
         error: e instanceof Error ? e.message : String(e),
       });
     }
   }
-  return { variants };
+  return { buildTag: SBIZ_BUILD_TAG, variants };
 }
