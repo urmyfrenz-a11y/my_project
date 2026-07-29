@@ -23,7 +23,12 @@ async function handle(req: NextRequest) {
     req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
     "";
   const expected = process.env.INGEST_TOKEN;
-  if (!expected || token !== expected) {
+  // Vercel Cron 은 요청에 Authorization: Bearer <CRON_SECRET> 를 자동으로 붙인다.
+  // 그래서 INGEST_TOKEN(수동 호출) 또는 CRON_SECRET(자동 크론) 둘 다 허용한다.
+  const cronSecret = process.env.CRON_SECRET;
+  const authorized =
+    (!!expected && token === expected) || (!!cronSecret && token === cronSecret);
+  if (!authorized) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -136,6 +141,12 @@ async function handle(req: NextRequest) {
       return NextResponse.json({ error: rpcErr.message }, { status: 500 });
     }
 
+    // 소스 피드에서 사라진 지 오래된(4일+) 공고 정리 — DB가 자동으로 깔끔히 유지됨.
+    const { data: purge } = await sb.rpc("purge_stale_programs", {
+      secret: expected,
+      older_than_days: 4,
+    });
+
     return NextResponse.json({
       ok: true,
       fetched: {
@@ -149,6 +160,7 @@ async function handle(req: NextRequest) {
       sbizError,
       unique: programs.length,
       result,
+      purged: purge,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
