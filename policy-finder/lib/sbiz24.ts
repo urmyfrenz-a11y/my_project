@@ -115,12 +115,20 @@ const BROWSER_COOKIE =
   "_harry_lang=ko; WMONID=Va1PNKqudPP; NetFunnel_ID=";
 
 async function rawCall(body: unknown, cookie?: string): Promise<RawResult> {
+  // 브라우저 요청 헤더를 최대한 그대로 재현(서버가 same-origin/브라우저 여부 검사 대비).
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json",
     "Accept-Language": "ko,en-US;q=0.9,en;q=0.8",
     Referer: "https://www.sbiz24.kr/",
     Origin: "https://www.sbiz24.kr",
+    "Origin-Method": "GET",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+    "sec-ch-ua": '"Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
     "User-Agent":
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
   };
@@ -339,7 +347,7 @@ export async function fetchSbiz24Programs(opts: {
 
 /** 진단용: 여러 본문/쿠키 변형을 시도해 어떤 게 200+데이터를 주는지, 필드명까지 보고.
  *  buildTag 로 새 배포 반영 여부를 확인한다. */
-export const SBIZ_BUILD_TAG = "sbiz-v5-tpbiz";
+export const SBIZ_BUILD_TAG = "sbiz-v6-headers";
 
 export async function fetchSbiz24Raw(): Promise<{
   buildTag: string;
