@@ -37,37 +37,66 @@ function pick(item: RawItem, ...keys: string[]): string | null {
 // 필터: 11=서울, 31=경기. aplySeYn:"Y" = 모집중만. 지원대상/업종은 비워 전체.
 type SearchObj = Record<string, unknown>;
 
-function fullSearch(
-  rcrtTypeCdNmList: string[],
-  rcrtTypeCdNmListDisplay: string,
-): SearchObj {
+// 업종 코드 = KSIC 대분류 알파벳(A~U). 전 업종 커버 시 전부 넣는다(빈 배열은 500 의심).
+const ALL_TPBIZ = "ABCDEFGHIJKLMNOPQRSTU".split("");
+
+function fullSearch(opts?: {
+  rcrtTypeCdNmList?: string[];
+  rcrtTypeCdNmListDisplay?: string;
+  tpbizCdList?: string[];
+  tpbizCdListDisplay?: string;
+  pbancNm?: string;
+}): SearchObj {
   return {
-    rcrtTypeCdNmList,
-    rcrtTypeCdNmListDisplay,
+    rcrtTypeCdNmList: opts?.rcrtTypeCdNmList ?? [],
+    rcrtTypeCdNmListDisplay: opts?.rcrtTypeCdNmListDisplay ?? "",
     regionNmList: ["경기", "서울"],
     regionNmListDisplay: "경기, 서울",
     regionCdList: ["31", "11"],
     departNmList: [],
     departNmListDisplay: null,
-    tpbizCdList: [],
-    tpbizCdListDisplay: "",
+    tpbizCdList: opts?.tpbizCdList ?? ALL_TPBIZ,
+    tpbizCdListDisplay: opts?.tpbizCdListDisplay ?? "",
     bhis: { from: null, to: null },
     wrkr: { from: null, to: null },
     sls: { from: null, to: null },
     aplySeYn: "Y",
     sbrPbancYn: "N",
     itrstPbancYn: "N",
-    pbancNm: "",
+    pbancNm: opts?.pbancNm ?? "",
     ptPbancSortBy: null,
     bizType: null,
     searchBox: null,
   };
 }
 
-// 전체 대상 먼저(빈 배열=전 지원대상), 혹시 실패하면 소상공인 한정으로 폴백.
+// 브라우저가 200 받은 요청을 글자 그대로(대조군). 업종 I,G만 선택된 상태였음.
+const EXACT_BROWSER_SEARCH: SearchObj = {
+  rcrtTypeCdNmList: ["소상공인"],
+  rcrtTypeCdNmListDisplay: "소상공인",
+  regionNmList: ["경기", "서울"],
+  regionNmListDisplay: "경기, 서울",
+  regionCdList: ["31", "11"],
+  departNmList: [],
+  departNmListDisplay: null,
+  tpbizCdList: ["I", "G"],
+  tpbizCdListDisplay: "숙박 및 음식점업, 도매 및 소매업",
+  bhis: { from: null, to: null },
+  wrkr: { from: null, to: null },
+  sls: { from: null, to: null },
+  aplySeYn: "Y",
+  sbrPbancYn: "N",
+  itrstPbancYn: "N",
+  pbancNm: "소상공인",
+  ptPbancSortBy: null,
+  bizType: null,
+  searchBox: null,
+};
+
+// 실제 수집용: 전 업종(A~U) 채워 전체 커버. 실패 시 브라우저 원본 그대로 폴백.
 export const SEARCH_VARIANTS: { name: string; search: SearchObj }[] = [
-  { name: "all-types", search: fullSearch([], "") },
-  { name: "sosang", search: fullSearch(["소상공인"], "소상공인") },
+  { name: "all-industry", search: fullSearch({ tpbizCdList: ALL_TPBIZ }) },
+  { name: "exact-browser", search: EXACT_BROWSER_SEARCH },
 ];
 
 function buildBody(search: SearchObj, startRow: number, endRow: number) {
@@ -310,16 +339,16 @@ export async function fetchSbiz24Programs(opts: {
 
 /** 진단용: 여러 본문/쿠키 변형을 시도해 어떤 게 200+데이터를 주는지, 필드명까지 보고.
  *  buildTag 로 새 배포 반영 여부를 확인한다. */
-export const SBIZ_BUILD_TAG = "sbiz-v4-icn1-cookie";
+export const SBIZ_BUILD_TAG = "sbiz-v5-tpbiz";
 
 export async function fetchSbiz24Raw(): Promise<{
   buildTag: string;
   variants: unknown[];
 }> {
   const probes: { name: string; search: SearchObj; cookie?: string }[] = [
-    { name: "all-types", search: SEARCH_VARIANTS[0].search },
-    { name: "sosang", search: SEARCH_VARIANTS[1].search },
-    { name: "all-types+cookie", search: SEARCH_VARIANTS[0].search, cookie: BROWSER_COOKIE },
+    { name: "exact-browser", search: EXACT_BROWSER_SEARCH },
+    { name: "all-industry", search: fullSearch({ tpbizCdList: ALL_TPBIZ }) },
+    { name: "sosang-allbiz", search: fullSearch({ rcrtTypeCdNmList: ["소상공인"], rcrtTypeCdNmListDisplay: "소상공인", tpbizCdList: ALL_TPBIZ }) },
   ];
   const variants: unknown[] = [];
   for (const p of probes) {
