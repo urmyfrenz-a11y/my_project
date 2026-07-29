@@ -9,6 +9,7 @@ import { fetchNipaRaw } from "@/lib/nipa";
 import { fetchFanfanRaw } from "@/lib/fanfan";
 import { fetchGbsaRaw } from "@/lib/gbsa";
 import { fetchSbaRaw } from "@/lib/sba";
+import { fetchSmtechRaw } from "@/lib/smtech";
 import { classifyIndustry } from "@/lib/industry";
 
 export const runtime = "nodejs";
@@ -38,6 +39,16 @@ async function handle(req: NextRequest) {
   }
 
   const debug = req.nextUrl.searchParams.get("debug");
+  // 진단: SMTECH R&D 사업공고 HTML 구조 확인(DB 미적재).
+  if (debug === "smtech") {
+    try {
+      const raw = await fetchSmtechRaw();
+      return NextResponse.json({ ok: true, smtech: raw });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    }
+  }
   // 진단: 서울경제진흥원(SBA) 접수중인 사업 HTML 구조 확인(DB 미적재).
   if (debug === "sba") {
     try {
