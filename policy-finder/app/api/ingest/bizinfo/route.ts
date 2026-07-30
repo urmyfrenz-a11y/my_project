@@ -11,6 +11,7 @@ import { fetchGbsaRaw, fetchGbsaPrograms } from "@/lib/gbsa";
 import { fetchSbaRaw, fetchSbaPrograms } from "@/lib/sba";
 import { fetchSmtechRaw } from "@/lib/smtech";
 import { classifyIndustry } from "@/lib/industry";
+import { classifyBizType } from "@/lib/bizType";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -239,6 +240,12 @@ async function handle(req: NextRequest) {
     const merged = [...byId.values()].map((p) => ({
       ...p,
       industry: classifyIndustry(p.title, p.summary, p.institution_name),
+      biz_type: classifyBizType(
+        p.external_id,
+        p.title,
+        p.summary,
+        p.institution_name,
+      ),
     }));
 
     // 품질 가드: 이미 마감된 공고(종료일 < 오늘, KST)는 소스 무관 일괄 제외.

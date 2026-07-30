@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { Category, ProgramRow, Province, Region } from "@/lib/types";
 import { INDUSTRIES } from "@/lib/industry";
+import { BIZ_TYPES } from "@/lib/bizType";
 
 const PROVINCES: Province[] = ["서울", "경기"];
 const PER_PAGE = 4; // 카테고리별 페이지당 표시 수
@@ -20,6 +21,7 @@ export default function SearchClient({
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(
     () => new Set(), // 기본 전체 언체크 (선택 안 함 = 전체)
   );
+  const [bizType, setBizType] = useState<string | null>(null); // 내 기업 형태(단일)
   const [industry, setIndustry] = useState<string | null>(null); // 내 업종(단일)
 
   const [loading, setLoading] = useState(false);
@@ -99,6 +101,7 @@ export default function SearchClient({
             ? []
             : [...selectedCategories],
         p_industry: industry, // null = 전업종(공통)만
+        p_biz_type: bizType, // null = 형태 공통만
       });
       if (error) throw new Error(error.message);
       setResults((data ?? []) as ProgramRow[]);
@@ -230,11 +233,59 @@ export default function SearchClient({
         </div>
       </section>
 
+      {/* ── 기업 형태 선택 ─────────────────────────── */}
+      <section className="rounded-2xl border border-line bg-card p-6 sm:p-7">
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="font-serif text-lg font-bold">
+            <span className="text-muted">2.</span> 기업 형태 선택
+          </h2>
+          <span className="text-xs text-muted">
+            {bizType ? bizType : "형태 공통만"}
+          </span>
+        </div>
+        <p className="mb-4 text-xs leading-relaxed text-muted">
+          형태를 고르지 않으면 <b className="text-foreground">형태 무관 공통</b>{" "}
+          사업만 보여줍니다. 내 형태를 고르면 그 형태 전용 사업(예: 소상공인 전용
+          정책자금, 예비창업 패키지 등)이 함께 표시됩니다.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setBizType(null)}
+            className={`rounded-full border px-3.5 py-1.5 text-sm transition ${
+              bizType === null
+                ? "border-accent bg-accent/10 font-medium"
+                : "border-line text-muted hover:border-accent/50"
+            }`}
+          >
+            전체(공통)
+          </button>
+          {BIZ_TYPES.map((bt) => {
+            const on = bizType === bt;
+            const label = bt === "창업" ? "창업·예비창업" : bt;
+            return (
+              <button
+                key={bt}
+                type="button"
+                onClick={() => setBizType(on ? null : bt)}
+                className={`rounded-full border px-3.5 py-1.5 text-sm transition ${
+                  on
+                    ? "border-accent bg-accent/10 font-medium"
+                    : "border-line text-muted hover:border-accent/50"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       {/* ── 카테고리 선택 ─────────────────────────── */}
       <section className="rounded-2xl border border-line bg-card p-6 sm:p-7">
         <div className="mb-4 flex items-baseline justify-between">
           <h2 className="font-serif text-lg font-bold">
-            <span className="text-muted">2.</span> 카테고리 선택
+            <span className="text-muted">3.</span> 카테고리 선택
           </h2>
           <span className="text-xs text-muted">
             {selectedCategories.size > 0
@@ -282,7 +333,7 @@ export default function SearchClient({
       <section className="rounded-2xl border border-line bg-card p-6 sm:p-7">
         <div className="mb-2 flex items-baseline justify-between">
           <h2 className="font-serif text-lg font-bold">
-            <span className="text-muted">3.</span> 업종 선택
+            <span className="text-muted">4.</span> 업종 선택
           </h2>
           <span className="text-xs text-muted">
             {industry ? industry : "공통 사업만"}
@@ -477,6 +528,9 @@ function ProgramCard({ row }: { row: ProgramRow }) {
     <article className="flex flex-col rounded-xl border border-line bg-card p-5 transition hover:border-line-strong hover:bg-card2">
       <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
         <Badge>{regionBadge}</Badge>
+        {row.biz_type && row.biz_type !== "공통" && (
+          <Badge>{row.biz_type === "창업" ? "창업·예비창업" : row.biz_type}</Badge>
+        )}
         {row.industry && row.industry !== "전업종" && (
           <Badge>{row.industry}</Badge>
         )}
