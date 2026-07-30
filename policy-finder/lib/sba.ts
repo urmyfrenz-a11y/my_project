@@ -64,10 +64,14 @@ export async function fetchSbaRaw(): Promise<{
   const postingLinkCount = (r.text.match(/PostingDetail/g) ?? []).length;
   // 실제 제목 셀(class="title text_l ...") 앞부분을 그대로 잘라 내부 구조 확인
   const cells: string[] = [];
-  const re = /<td class="title text_l[^"]*"[\s\S]*?<\/td>/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(r.text)) && cells.length < 4) {
-    cells.push(m[0].slice(0, 700));
+  // 제목 셀은 내부에 중첩 <table>이 있어 첫 </td>로는 안 끝남 → 다음 제목셀 시작 전까지 크게 확보
+  const starts: number[] = [];
+  const startRe = /<td class="title text_l/gi;
+  let sm: RegExpExecArray | null;
+  while ((sm = startRe.exec(r.text))) starts.push(sm.index);
+  for (let i = 0; i < Math.min(2, starts.length); i++) {
+    const end = starts[i + 1] ?? starts[i] + 1800;
+    cells.push(r.text.slice(starts[i], Math.min(end, starts[i] + 1800)));
   }
   return {
     buildTag: SBA_BUILD_TAG,
