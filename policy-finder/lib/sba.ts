@@ -57,20 +57,25 @@ export async function fetchSbaRaw(): Promise<{
   status: number;
   length: number;
   postingLinkCount: number;
-  rowSample: string;
+  titleCellCount: number;
+  titleCells: string[];
 }> {
   const r = await callSba();
-  // 목록 행 구조를 바로 보기 위해 첫 상세링크 주변을 잘라 반환
-  const idx = r.text.indexOf("PostingDetail");
-  const rowSample =
-    idx >= 0 ? r.text.slice(Math.max(0, idx - 400), idx + 2200) : r.text.slice(0, 2600);
   const postingLinkCount = (r.text.match(/PostingDetail/g) ?? []).length;
+  // 실제 제목 셀(class="title text_l ...") 앞부분을 그대로 잘라 내부 구조 확인
+  const cells: string[] = [];
+  const re = /<td class="title text_l[^"]*"[\s\S]*?<\/td>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(r.text)) && cells.length < 4) {
+    cells.push(m[0].slice(0, 700));
+  }
   return {
     buildTag: SBA_BUILD_TAG,
     status: r.status,
     length: r.text.length,
     postingLinkCount,
-    rowSample,
+    titleCellCount: (r.text.match(/<td class="title text_l/gi) ?? []).length,
+    titleCells: cells,
   };
 }
 
