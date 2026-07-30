@@ -95,17 +95,20 @@ function sbaParseRow(rowHtml: string, regions: RegionLite[]): NormalizedProgram 
   const mid = firstMatch(GUID_RE, rowHtml);
   if (!mid) return null;
 
+  // 실제 사업명은 <span id="..._new_name_N">사업명</span> (제목 셀 안 중첩표의 숨김
+  // <caption>이 아니라 이 span). 유형은 <span id="..._lb_apply_templatename_N">기업</span>.
   const title = stripHtml(
-    firstMatch(/class="title[^"]*"[^>]*>([\s\S]*?)<\/td>/i, rowHtml),
+    firstMatch(/id="[^"]*new_name_\d+"[^>]*>([\s\S]*?)<\/span>/i, rowHtml),
   );
   if (!title) return null;
 
   const type = stripHtml(
-    firstMatch(/class="[^"]*only_pc"[^>]*>([\s\S]*?)<\/td>/i, rowHtml),
+    firstMatch(/id="[^"]*lb_apply_templatename_\d+"[^>]*>([\s\S]*?)<\/span>/i, rowHtml),
   );
-  // 접수일정 td 에서 날짜 2개 추출
-  const dateCell = firstMatch(/class="[^"]*\bdate\b[^"]*"[^>]*>([\s\S]*?)<\/td>/i, rowHtml) ?? rowHtml;
-  const dates = dateCell.match(/\d{4}-\d{2}-\d{2}/g) ?? [];
+  // 접수일정: 행 내 날짜(YYYY-MM-DD 또는 YYYY.MM.DD) 앞 2개 = 시작·종료
+  const dates = (rowHtml.match(/\d{4}[.\-]\d{2}[.\-]\d{2}/g) ?? []).map((d) =>
+    d.replace(/\./g, "-"),
+  );
   const start = toISODate(dates[0] ?? null);
   const end = toISODate(dates[1] ?? null);
 
