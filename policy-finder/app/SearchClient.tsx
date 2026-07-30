@@ -240,13 +240,13 @@ export default function SearchClient({
             <span className="text-muted">2.</span> 기업 형태 선택
           </h2>
           <span className="text-xs text-muted">
-            {bizType ? bizType : "형태 공통만"}
+            {bizType ? bizType : "전체"}
           </span>
         </div>
         <p className="mb-4 text-xs leading-relaxed text-muted">
-          형태를 고르지 않으면 <b className="text-foreground">형태 무관 공통</b>{" "}
-          사업만 보여줍니다. 내 형태를 고르면 그 형태 전용 사업(예: 소상공인 전용
-          정책자금, 예비창업 패키지 등)이 함께 표시됩니다.
+          고르지 않으면 <b className="text-foreground">전체</b> 사업을 보여줍니다.
+          내 형태를 고르면 그 형태에 맞는 사업(해당 형태 전용 + 형태 무관 공통)만
+          걸러서 보여줍니다.
         </p>
         <div className="flex flex-wrap gap-2">
           <button
@@ -258,7 +258,7 @@ export default function SearchClient({
                 : "border-line text-muted hover:border-accent/50"
             }`}
           >
-            전체(공통)
+            전체
           </button>
           {BIZ_TYPES.map((bt) => {
             const on = bizType === bt;
