@@ -236,10 +236,18 @@ async function handle(req: NextRequest) {
     const byId = new Map<string, NormalizedProgram>();
     for (const p of [...raw, ...kstartup, ...bojo, ...sbiz, ...gbsa, ...fanfan, ...sba])
       byId.set(p.external_id, p);
-    const programs = [...byId.values()].map((p) => ({
+    const merged = [...byId.values()].map((p) => ({
       ...p,
       industry: classifyIndustry(p.title, p.summary, p.institution_name),
     }));
+
+    // 품질 가드: 이미 마감된 공고(종료일 < 오늘, KST)는 소스 무관 일괄 제외.
+    // 종료일이 없는 상시 공고는 유지. (GBSA 등 마감분 목록만 주는 소스 오염 방지)
+    const kstToday = new Date(Date.now() + 9 * 3600 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const programs = merged.filter((p) => !p.apply_end || p.apply_end >= kstToday);
+    const expiredDropped = merged.length - programs.length;
 
     // DB 적재 함수 호출(SECURITY DEFINER, RLS 우회). anon 클라이언트로 호출하되
     // secret(=INGEST_TOKEN)로 보호. service_role 불필요.
@@ -274,6 +282,7 @@ async function handle(req: NextRequest) {
       gbsaError,
       fanfanError,
       sbaError,
+      expiredDropped,
       unique: programs.length,
       result,
       purged: purge,
