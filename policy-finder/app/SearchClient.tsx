@@ -262,7 +262,7 @@ export default function SearchClient({
           </button>
           {BIZ_TYPES.map((bt) => {
             const on = bizType === bt;
-            const label = bt === "창업" ? "창업·예비창업" : bt;
+            const label = bt === "창업" ? "창업·스타트업" : bt;
             return (
               <button
                 key={bt}
@@ -529,7 +529,7 @@ function ProgramCard({ row }: { row: ProgramRow }) {
       <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
         <Badge>{regionBadge}</Badge>
         {row.biz_type && row.biz_type !== "공통" && (
-          <Badge>{row.biz_type === "창업" ? "창업·예비창업" : row.biz_type}</Badge>
+          <Badge>{row.biz_type === "창업" ? "창업·스타트업" : row.biz_type}</Badge>
         )}
         {row.industry && row.industry !== "전업종" && (
           <Badge>{row.industry}</Badge>
