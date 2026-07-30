@@ -6,7 +6,16 @@
 //         searchTargetStr(대상), searchTypeStr, searchOrder=1, ...
 //   헤더: X-Requested-With, Sec-Fetch-*, Content-Type form-urlencoded
 //
-// 응답 형식/필드명은 배포 환경에서 원본을 읽어 확정한다(fetchFanfanRaw).
+// 응답: { sprtBizApplList:[ { sprtBizNm(제목), sprtBizCd(ID), rcritBgngYmd,
+//         rcritEndYmd, jrsdInsttNm/operInstNm(기관), sprtBizCtpvNm(시도) } ] }
+
+import { classifyCategory } from "./categories";
+import {
+  NormalizedProgram,
+  RegionLite,
+  resolveRegion,
+  toISODate,
+} from "./bizinfo";
 
 const FANFAN_LIST = "https://fanfandaero.kr/portal/v2/selectSprtBizPbancList.do";
 const FANFAN_PAGE =
@@ -135,4 +144,70 @@ export async function fetchFanfanRaw(): Promise<{
     session: cookie ? "got-session" : "no-session",
     variants,
   };
+}
+
+// ── 정규화 ──────────────────────────────────────────────
+type RawItem = Record<string, unknown>;
+
+function pick(item: RawItem, ...keys: string[]): string | null {
+  for (const k of keys) {
+    const v = item[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+    if (typeof v === "number") return String(v);
+  }
+  return null;
+}
+
+function extractItems(json: unknown): RawItem[] {
+  if (json && typeof json === "object") {
+    const v = (json as Record<string, unknown>).sprtBizApplList;
+    if (Array.isArray(v)) return v as RawItem[];
+  }
+  return [];
+}
+
+function fanfanNormalize(item: RawItem, regions: RegionLite[]): NormalizedProgram | null {
+  const title = pick(item, "sprtBizNm");
+  if (!title) return null;
+  const code = pick(item, "sprtBizCd") ?? title;
+
+  const start = toISODate(pick(item, "rcritBgngYmd", "pbancRlsBgngYmd"));
+  const end = toISODate(pick(item, "rcritEndYmd", "pbancRlsEndYmd"));
+  const inst = pick(item, "jrsdInsttNm", "operInstNm");
+  const ctpv = pick(item, "sprtBizCtpvNm");
+  const category = classifyCategory(title, pick(item, "sprtBizTyNm"));
+
+  // 판판대로는 판로 통합(전국 중심). 지역 표기 있으면 반영, 없으면 전국.
+  const region = resolveRegion(`${ctpv ?? ""} ${title} ${inst ?? ""}`, regions);
+  if (!region) return null; // 타지역 전용 제외
+
+  return {
+    external_id: `fanfan:${code}`,
+    title,
+    institution_name: inst ?? "소상공인시장진흥공단",
+    category_name: category,
+    region_scope: region.scope,
+    province: region.province,
+    region_district: region.district,
+    summary: null,
+    support_amount: null,
+    apply_start: start,
+    apply_end: end,
+    is_ongoing: !end && !start,
+    source_url: `https://fanfandaero.kr/portal/v2/preSprtBizPbancDetail.do?sprtBizCd=${code}`,
+  };
+}
+
+/** 판판대로 지원사업 조회 후 정규화. */
+export async function fetchFanfanPrograms(opts: {
+  regions: RegionLite[];
+  pageUnit?: number;
+}): Promise<NormalizedProgram[]> {
+  const cookie = await fetchSession();
+  const r = await callFanfan(buildForm({ pageUnit: opts.pageUnit ?? 200 }), cookie ?? undefined);
+  if (!r.ok) throw new Error(`판판대로 API 오류: HTTP ${r.status}`);
+  const json = JSON.parse(r.text);
+  return extractItems(json)
+    .map((it) => fanfanNormalize(it, opts.regions))
+    .filter((x): x is NormalizedProgram => x !== null);
 }

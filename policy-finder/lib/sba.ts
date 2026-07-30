@@ -3,7 +3,17 @@
 //   GET https://www.sba.seoul.kr/Pages/BusinessApply/OngoingList.aspx
 //   → 목록 HTML. 각 행에 사업명·접수일정·상세링크(PostingDetail.aspx?mid=<GUID>) 포함.
 //
-// JSON이 아니라 HTML이므로, 응답 HTML 구조를 확인(fetchSbaRaw)한 뒤 파서를 작성한다.
+// HTML 파싱: 각 행 <tr class="grid_list tbody"> 안에서 상세링크(mid)·사업명·유형·
+// 접수일정을 뽑는다. 모두 서울경제진흥원(SBA) 사업 → 서울로 태깅.
+
+import { classifyCategory } from "./categories";
+import {
+  NormalizedProgram,
+  RegionLite,
+  resolveRegion,
+  stripHtml,
+  toISODate,
+} from "./bizinfo";
 
 const SBA_LIST = "https://www.sba.seoul.kr/Pages/BusinessApply/OngoingList.aspx";
 
@@ -62,4 +72,68 @@ export async function fetchSbaRaw(): Promise<{
     postingLinkCount,
     rowSample,
   };
+}
+
+// ── HTML 파서 ───────────────────────────────────────────
+const GUID_RE = /mid=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+
+function firstMatch(re: RegExp, s: string): string | null {
+  const m = s.match(re);
+  return m ? m[1] : null;
+}
+
+function sbaParseRow(rowHtml: string, regions: RegionLite[]): NormalizedProgram | null {
+  const mid = firstMatch(GUID_RE, rowHtml);
+  if (!mid) return null;
+
+  const title = stripHtml(
+    firstMatch(/class="title[^"]*"[^>]*>([\s\S]*?)<\/td>/i, rowHtml),
+  );
+  if (!title) return null;
+
+  const type = stripHtml(
+    firstMatch(/class="[^"]*only_pc"[^>]*>([\s\S]*?)<\/td>/i, rowHtml),
+  );
+  // 접수일정 td 에서 날짜 2개 추출
+  const dateCell = firstMatch(/class="[^"]*\bdate\b[^"]*"[^>]*>([\s\S]*?)<\/td>/i, rowHtml) ?? rowHtml;
+  const dates = dateCell.match(/\d{4}-\d{2}-\d{2}/g) ?? [];
+  const start = toISODate(dates[0] ?? null);
+  const end = toISODate(dates[1] ?? null);
+
+  const category = classifyCategory(title, type);
+  const region =
+    resolveRegion(title, regions, "서울") ??
+    { scope: "province_wide" as const, province: "서울" as const, district: null };
+
+  return {
+    external_id: `sba:${mid}`,
+    title,
+    institution_name: "서울경제진흥원(SBA)",
+    category_name: category,
+    region_scope: region.scope,
+    province: region.province,
+    region_district: region.district,
+    summary: null,
+    support_amount: null,
+    apply_start: start,
+    apply_end: end,
+    is_ongoing: !end && !start,
+    source_url: `https://www.sba.seoul.kr/Pages/BusinessApply/PostingDetail.aspx?p=1&mid=${mid}`,
+  };
+}
+
+/** SBA 접수중인 사업 HTML 파싱 후 정규화(서울). 첫 페이지 기준(약 10건). */
+export async function fetchSbaPrograms(opts: {
+  regions: RegionLite[];
+}): Promise<NormalizedProgram[]> {
+  const r = await callSba();
+  if (!r.ok) throw new Error(`SBA 페이지 오류: HTTP ${r.status}`);
+  // 각 공고 행으로 분할
+  const rows = r.text.split(/<tr class="grid_list tbody"/i).slice(1);
+  const byId = new Map<string, NormalizedProgram>();
+  for (const row of rows) {
+    const n = sbaParseRow(row, opts.regions);
+    if (n) byId.set(n.external_id, n);
+  }
+  return [...byId.values()];
 }

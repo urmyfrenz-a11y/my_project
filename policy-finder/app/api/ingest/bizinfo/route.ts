@@ -6,9 +6,9 @@ import { fetchBojoPrograms } from "@/lib/bojo";
 import { fetchSbiz24Programs, fetchSbiz24Raw, SBIZ_BUILD_TAG } from "@/lib/sbiz24";
 import { fetchEgbizRaw, fetchEgbizDiag } from "@/lib/egbiz";
 import { fetchNipaRaw } from "@/lib/nipa";
-import { fetchFanfanRaw } from "@/lib/fanfan";
-import { fetchGbsaRaw } from "@/lib/gbsa";
-import { fetchSbaRaw } from "@/lib/sba";
+import { fetchFanfanRaw, fetchFanfanPrograms } from "@/lib/fanfan";
+import { fetchGbsaRaw, fetchGbsaPrograms } from "@/lib/gbsa";
+import { fetchSbaRaw, fetchSbaPrograms } from "@/lib/sba";
 import { fetchSmtechRaw } from "@/lib/smtech";
 import { classifyIndustry } from "@/lib/industry";
 
@@ -206,8 +206,36 @@ async function handle(req: NextRequest) {
       sbizError = e instanceof Error ? e.message : String(e);
     }
 
+    // 소스 5: GBSA(경기도경제과학진흥원 G-PMS) — 내부 JSON. 모두 경기.
+    let gbsa: NormalizedProgram[] = [];
+    let gbsaError: string | null = null;
+    try {
+      gbsa = await fetchGbsaPrograms({ regions: regionLite });
+    } catch (e) {
+      gbsaError = e instanceof Error ? e.message : String(e);
+    }
+
+    // 소스 6: 판판대로(fanfandaero) — 소상공인 판로/유통 지원 통합. 내부 JSON.
+    let fanfan: NormalizedProgram[] = [];
+    let fanfanError: string | null = null;
+    try {
+      fanfan = await fetchFanfanPrograms({ regions: regionLite });
+    } catch (e) {
+      fanfanError = e instanceof Error ? e.message : String(e);
+    }
+
+    // 소스 7: 서울경제진흥원(SBA) 접수중인 사업 — HTML 크롤. 모두 서울.
+    let sba: NormalizedProgram[] = [];
+    let sbaError: string | null = null;
+    try {
+      sba = await fetchSbaPrograms({ regions: regionLite });
+    } catch (e) {
+      sbaError = e instanceof Error ? e.message : String(e);
+    }
+
     const byId = new Map<string, NormalizedProgram>();
-    for (const p of [...raw, ...kstartup, ...bojo, ...sbiz]) byId.set(p.external_id, p);
+    for (const p of [...raw, ...kstartup, ...bojo, ...sbiz, ...gbsa, ...fanfan, ...sba])
+      byId.set(p.external_id, p);
     const programs = [...byId.values()].map((p) => ({
       ...p,
       industry: classifyIndustry(p.title, p.summary, p.institution_name),
@@ -236,10 +264,16 @@ async function handle(req: NextRequest) {
         kstartup: kstartup.length,
         bojo: bojo.length,
         sbiz: sbiz.length,
+        gbsa: gbsa.length,
+        fanfan: fanfan.length,
+        sba: sba.length,
       },
       kstartupError,
       bojoError,
       sbizError,
+      gbsaError,
+      fanfanError,
+      sbaError,
       unique: programs.length,
       result,
       purged: purge,
