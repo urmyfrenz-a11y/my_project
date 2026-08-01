@@ -382,12 +382,20 @@ async function naverViaApify(query: string): Promise<CollectResult> {
     58000,
   );
   if (!res.ok) {
+    // Surface Apify's own error message (its body explains 403s: usage limit,
+    // token, rental, etc.) so failures are diagnosable instead of a bare code.
+    let detail = "";
+    try {
+      detail = (await res.text()).slice(0, 300);
+    } catch {
+      /* ignore */
+    }
     return {
       platform: "naver",
       place: null,
       reviews: [],
       ok: false,
-      error: `네이버 리뷰 수집 오류 (${res.status})`,
+      error: `네이버 리뷰 수집 오류 (${res.status})${detail ? ` — ${detail}` : ""}`,
       errorCode: "UPSTREAM_ERROR",
     };
   }

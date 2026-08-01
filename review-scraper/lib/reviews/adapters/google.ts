@@ -112,12 +112,20 @@ export async function googleCollect(
   }
 
   if (!res.ok) {
+    // Surface Apify's own error message (its body explains 403s: usage limit,
+    // token, rental, etc.) so failures are diagnosable instead of a bare code.
+    let detail = "";
+    try {
+      detail = (await res.text()).slice(0, 300);
+    } catch {
+      /* ignore */
+    }
     return {
       platform: "google",
       place: null,
       reviews: [],
       ok: false,
-      error: `구글맵 리뷰 수집 오류 (${res.status})`,
+      error: `구글맵 리뷰 수집 오류 (${res.status})${detail ? ` — ${detail}` : ""}`,
       errorCode: "UPSTREAM_ERROR",
     };
   }
