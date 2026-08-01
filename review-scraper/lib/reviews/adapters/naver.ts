@@ -1,6 +1,12 @@
 import { config } from "../config";
 import type { CollectResult, PlaceSearchResult, UnifiedReview } from "../types";
-import { anonymizeAuthor, fetchWithTimeout, toIsoDate } from "../util";
+import {
+  anonymizeAuthor,
+  apifyQuotaMessage,
+  fetchWithTimeout,
+  isApifyUsageLimit,
+  toIsoDate,
+} from "../util";
 
 // Naver blocks datacenter IPs (Vercel) with a captcha, so we can't fetch Naver
 // Place directly. We route through Scrapingdog — a scraping API that fetches
@@ -382,20 +388,28 @@ async function naverViaApify(query: string): Promise<CollectResult> {
     58000,
   );
   if (!res.ok) {
-    // Surface Apify's own error message (its body explains 403s: usage limit,
-    // token, rental, etc.) so failures are diagnosable instead of a bare code.
-    let detail = "";
+    let body = "";
     try {
-      detail = (await res.text()).slice(0, 300);
+      body = await res.text();
     } catch {
       /* ignore */
+    }
+    if (isApifyUsageLimit(res.status, body)) {
+      return {
+        platform: "naver",
+        place: null,
+        reviews: [],
+        ok: false,
+        error: apifyQuotaMessage(),
+        errorCode: "QUOTA_EXCEEDED",
+      };
     }
     return {
       platform: "naver",
       place: null,
       reviews: [],
       ok: false,
-      error: `네이버 리뷰 수집 오류 (${res.status})${detail ? ` — ${detail}` : ""}`,
+      error: `네이버 리뷰 수집 오류 (${res.status})`,
       errorCode: "UPSTREAM_ERROR",
     };
   }

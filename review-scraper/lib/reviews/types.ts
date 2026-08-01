@@ -54,6 +54,7 @@ export interface CollectResult {
     | "MISSING_KEY"
     | "NO_MATCH"
     | "SCRAPER_DISABLED"
+    | "QUOTA_EXCEEDED"
     | "UPSTREAM_ERROR"
     | "UNKNOWN";
 }

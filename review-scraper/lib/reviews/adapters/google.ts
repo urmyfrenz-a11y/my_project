@@ -1,6 +1,13 @@
 import { config } from "../config";
 import type { CollectResult, PlaceSearchResult, UnifiedReview } from "../types";
-import { anonymizeAuthor, fetchWithTimeout, normalizeRating, toIsoDate } from "../util";
+import {
+  anonymizeAuthor,
+  apifyQuotaMessage,
+  fetchWithTimeout,
+  isApifyUsageLimit,
+  normalizeRating,
+  toIsoDate,
+} from "../util";
 
 /* ── Apify: Google Maps reviews (primary & only path) ─────
  * Google's official Places API returns at most 5 reviews per place, so it's
@@ -112,20 +119,28 @@ export async function googleCollect(
   }
 
   if (!res.ok) {
-    // Surface Apify's own error message (its body explains 403s: usage limit,
-    // token, rental, etc.) so failures are diagnosable instead of a bare code.
-    let detail = "";
+    let body = "";
     try {
-      detail = (await res.text()).slice(0, 300);
+      body = await res.text();
     } catch {
       /* ignore */
+    }
+    if (isApifyUsageLimit(res.status, body)) {
+      return {
+        platform: "google",
+        place: null,
+        reviews: [],
+        ok: false,
+        error: apifyQuotaMessage(),
+        errorCode: "QUOTA_EXCEEDED",
+      };
     }
     return {
       platform: "google",
       place: null,
       reviews: [],
       ok: false,
-      error: `구글맵 리뷰 수집 오류 (${res.status})${detail ? ` — ${detail}` : ""}`,
+      error: `구글맵 리뷰 수집 오류 (${res.status})`,
       errorCode: "UPSTREAM_ERROR",
     };
   }
