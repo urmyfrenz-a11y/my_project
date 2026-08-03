@@ -1,6 +1,13 @@
 import { config } from "../config";
 import type { CollectResult, PlaceSearchResult, UnifiedReview } from "../types";
-import { anonymizeAuthor, fetchWithTimeout, normalizeRating, toIsoDate } from "../util";
+import {
+  anonymizeAuthor,
+  apifyQuotaMessage,
+  fetchWithTimeout,
+  isApifyUsageLimit,
+  normalizeRating,
+  toIsoDate,
+} from "../util";
 
 /* ── Apify: Google Maps reviews (primary & only path) ─────
  * Google's official Places API returns at most 5 reviews per place, so it's
@@ -112,6 +119,22 @@ export async function googleCollect(
   }
 
   if (!res.ok) {
+    let body = "";
+    try {
+      body = await res.text();
+    } catch {
+      /* ignore */
+    }
+    if (isApifyUsageLimit(res.status, body)) {
+      return {
+        platform: "google",
+        place: null,
+        reviews: [],
+        ok: false,
+        error: apifyQuotaMessage(),
+        errorCode: "QUOTA_EXCEEDED",
+      };
+    }
     return {
       platform: "google",
       place: null,

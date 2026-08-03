@@ -225,7 +225,7 @@ export default function ReviewClient() {
                     setChosen(null);
                   }
                 }}
-                placeholder="장소명을 입력하세요 (예: 커피에반하다 광교호수공원점)"
+                placeholder="장소명을 입력하세요 (예: 갤러리아백화점 광교점)"
                 className="w-full rounded-xl bg-transparent py-3 pl-11 pr-3 text-[15px] outline-none placeholder:text-muted"
               />
             </div>

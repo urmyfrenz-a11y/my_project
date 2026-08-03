@@ -60,3 +60,39 @@ export async function fetchWithTimeout(
     clearTimeout(id);
   }
 }
+
+/* ── Apify free-plan usage limit ──────────────────────────
+ * Naver맵 · 구글맵 share one Apify account whose free plan grants $5 of
+ * platform usage per monthly billing cycle. When it's spent, Apify returns 403
+ * { type: "platform-feature-disabled", message: "Monthly usage hard limit
+ * exceeded" } and blocks all Actor runs until the cycle rolls over. The cycle
+ * renews monthly on this day-of-month (current anniversary = the 5th). */
+const APIFY_RESET_DAY = 5;
+
+/** True when an Apify error body is the monthly-usage-limit block. */
+export function isApifyUsageLimit(status: number, body: string): boolean {
+  return (
+    status === 403 &&
+    /platform-feature-disabled|usage hard limit|usage limit/i.test(body)
+  );
+}
+
+/** "8월 5일" — the next date the Apify free credit resets. */
+export function nextApifyResetLabel(now: Date = new Date()): string {
+  let year = now.getUTCFullYear();
+  let month = now.getUTCMonth(); // 0-based
+  // If we're already on/after this cycle's reset day, the next reset is next month.
+  if (now.getUTCDate() >= APIFY_RESET_DAY) {
+    month += 1;
+    if (month > 11) {
+      month = 0;
+      year += 1;
+    }
+  }
+  return `${month + 1}월 ${APIFY_RESET_DAY}일`;
+}
+
+/** User-facing message shown when the Apify free quota is exhausted. */
+export function apifyQuotaMessage(): string {
+  return `무료 API 호출 한도를 초과하여 현재 리뷰를 수집할 수 없습니다. ${nextApifyResetLabel()}에 한도가 리셋되면 다시 이용할 수 있습니다.`;
+}

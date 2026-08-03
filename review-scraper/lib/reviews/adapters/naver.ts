@@ -1,6 +1,12 @@
 import { config } from "../config";
 import type { CollectResult, PlaceSearchResult, UnifiedReview } from "../types";
-import { anonymizeAuthor, fetchWithTimeout, toIsoDate } from "../util";
+import {
+  anonymizeAuthor,
+  apifyQuotaMessage,
+  fetchWithTimeout,
+  isApifyUsageLimit,
+  toIsoDate,
+} from "../util";
 
 // Naver blocks datacenter IPs (Vercel) with a captcha, so we can't fetch Naver
 // Place directly. We route through Scrapingdog — a scraping API that fetches
@@ -382,6 +388,22 @@ async function naverViaApify(query: string): Promise<CollectResult> {
     58000,
   );
   if (!res.ok) {
+    let body = "";
+    try {
+      body = await res.text();
+    } catch {
+      /* ignore */
+    }
+    if (isApifyUsageLimit(res.status, body)) {
+      return {
+        platform: "naver",
+        place: null,
+        reviews: [],
+        ok: false,
+        error: apifyQuotaMessage(),
+        errorCode: "QUOTA_EXCEEDED",
+      };
+    }
     return {
       platform: "naver",
       place: null,
