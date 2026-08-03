@@ -5,7 +5,7 @@ import { fetchKstartupPrograms } from "@/lib/kstartup";
 import { fetchBojoPrograms } from "@/lib/bojo";
 import { fetchSbiz24Programs, fetchSbiz24Raw, SBIZ_BUILD_TAG } from "@/lib/sbiz24";
 import { fetchEgbizRaw, fetchEgbizDiag } from "@/lib/egbiz";
-import { fetchNipaRaw } from "@/lib/nipa";
+import { fetchNipaRaw, fetchNipaDiag } from "@/lib/nipa";
 import { fetchFanfanRaw, fetchFanfanPrograms } from "@/lib/fanfan";
 import { fetchGbsaRaw, fetchGbsaPrograms } from "@/lib/gbsa";
 import { fetchSbaRaw, fetchSbaPrograms } from "@/lib/sba";
@@ -111,6 +111,22 @@ async function handle(req: NextRequest) {
     try {
       const raw = await fetchNipaRaw(key);
       return NextResponse.json({ ok: true, nipa: raw });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    }
+  }
+  // 진단: NIPA 정규화(접수성 선별) 결과 미리보기. DB 미적재.
+  if (debug === "nipa2") {
+    const key = process.env.DATA_GO_KR_API_KEY || process.env.KSTARTUP_API_KEY;
+    if (!key) {
+      return NextResponse.json({ ok: false, error: "DATA_GO_KR_API_KEY 미설정" }, { status: 500 });
+    }
+    try {
+      const sb = getSupabase();
+      const { data: regions } = await sb.from("regions").select("id, province, district");
+      const diag = await fetchNipaDiag(key, (regions ?? []) as RegionLite[]);
+      return NextResponse.json({ ok: true, nipa: diag });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return NextResponse.json({ ok: false, error: msg }, { status: 500 });
