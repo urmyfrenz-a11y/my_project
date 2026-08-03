@@ -17,6 +17,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+// 서울·경기/수도권/전국 신호(제목에 있으면 우리 대상 → 유지)
+const KEEP_REGION_RE = /서울|경기|수도권|전국/;
+// 타 광역·특별자치·권역·타지역 대표도시(제목에 있으면 타지역 전용 → 제외).
+// 주의: '광주','이천','여주','안산','광명' 등 경기 시군과 겹치는 단독어는 넣지 않는다.
+const OTHER_REGION_RE =
+  /부산|대구|인천|대전|울산|세종|제주|광주광역시|강원특별|전북특별|강원|충북|충남|충청|전북|전남|전라|경북|경남|경상|대경권|영남|호남|동남권|창원|포항|전주|청주|천안|아산|여수|순천|목포|김해|진주|구미|원주|춘천|강릉|군산|익산|경주|양산|거제|세종특별/;
+
+/** 제목 기준: 서울·경기(수도권/전국) 신호가 없고 타 지역이 명시되면 우리 서비스 대상 아님. */
+function isOtherRegionOnly(title: string | null | undefined): boolean {
+  const t = title ?? "";
+  if (KEEP_REGION_RE.test(t)) return false;
+  return OTHER_REGION_RE.test(t);
+}
+
 // 통합 수집 라우트 — "스타트업·소상공인 지원사업"
 //   GET|POST /api/ingest/bizinfo?token=INGEST_TOKEN[&cnt=300]
 //
@@ -282,8 +296,14 @@ async function handle(req: NextRequest) {
     const kstToday = new Date(Date.now() + 9 * 3600 * 1000)
       .toISOString()
       .slice(0, 10);
-    const programs = merged.filter((p) => !p.apply_end || p.apply_end >= kstToday);
-    const expiredDropped = merged.length - programs.length;
+    const fresh = merged.filter((p) => !p.apply_end || p.apply_end >= kstToday);
+    const expiredDropped = merged.length - fresh.length;
+
+    // 품질 가드 2: 서울·경기 외 타 지역 전용 공고 제외(소스 무관).
+    // 제목에 서울/경기/수도권/전국 신호가 없고 타 광역·권역·타지역 도시가 있으면 제외.
+    // (경기 광주시/이천/여주와 충돌하는 단독 '광주/이천/여주'는 넣지 않음 → 광역시만 '광주광역시')
+    const programs = fresh.filter((p) => !isOtherRegionOnly(p.title));
+    const otherRegionDropped = fresh.length - programs.length;
 
     // DB 적재 함수 호출(SECURITY DEFINER, RLS 우회). anon 클라이언트로 호출하되
     // secret(=INGEST_TOKEN)로 보호. service_role 불필요.
@@ -321,6 +341,7 @@ async function handle(req: NextRequest) {
       sbaError,
       nipaError,
       expiredDropped,
+      otherRegionDropped,
       unique: programs.length,
       result,
       purged: purge,
