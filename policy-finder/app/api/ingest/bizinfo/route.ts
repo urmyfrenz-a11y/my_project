@@ -5,7 +5,7 @@ import { fetchKstartupPrograms } from "@/lib/kstartup";
 import { fetchBojoPrograms } from "@/lib/bojo";
 import { fetchSbiz24Programs, fetchSbiz24Raw, SBIZ_BUILD_TAG } from "@/lib/sbiz24";
 import { fetchEgbizRaw, fetchEgbizDiag } from "@/lib/egbiz";
-import { fetchNipaRaw, fetchNipaDiag } from "@/lib/nipa";
+import { fetchNipaRaw, fetchNipaDiag, fetchNipaPrograms } from "@/lib/nipa";
 import { fetchFanfanRaw, fetchFanfanPrograms } from "@/lib/fanfan";
 import { fetchGbsaRaw, fetchGbsaPrograms } from "@/lib/gbsa";
 import { fetchSbaRaw, fetchSbaPrograms } from "@/lib/sba";
@@ -250,8 +250,21 @@ async function handle(req: NextRequest) {
       sbaError = e instanceof Error ? e.message : String(e);
     }
 
+    // 소스 8: NIPA/과기정통부 사업공고 — 접수성만 선별(전국 ICT/AI/스타트업). best-effort.
+    let nipa: NormalizedProgram[] = [];
+    let nipaError: string | null = null;
+    if (dataGoKrKey) {
+      try {
+        nipa = await fetchNipaPrograms({ apiKey: dataGoKrKey, regions: regionLite });
+      } catch (e) {
+        nipaError = e instanceof Error ? e.message : String(e);
+      }
+    }
+
     const byId = new Map<string, NormalizedProgram>();
-    for (const p of [...raw, ...kstartup, ...bojo, ...sbiz, ...gbsa, ...fanfan, ...sba])
+    for (const p of [
+      ...raw, ...kstartup, ...bojo, ...sbiz, ...gbsa, ...fanfan, ...sba, ...nipa,
+    ])
       byId.set(p.external_id, p);
     const merged = [...byId.values()].map((p) => ({
       ...p,
@@ -298,6 +311,7 @@ async function handle(req: NextRequest) {
         gbsa: gbsa.length,
         fanfan: fanfan.length,
         sba: sba.length,
+        nipa: nipa.length,
       },
       kstartupError,
       bojoError,
@@ -305,6 +319,7 @@ async function handle(req: NextRequest) {
       gbsaError,
       fanfanError,
       sbaError,
+      nipaError,
       expiredDropped,
       unique: programs.length,
       result,
