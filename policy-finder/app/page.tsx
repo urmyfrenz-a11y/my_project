@@ -68,10 +68,10 @@ export default async function Page() {
       )}
 
       <footer className="mt-20 border-t border-line pt-6 text-xs leading-relaxed text-muted">
-        데이터 출처: K-Startup · 기업마당(bizinfo) · 보조금24 · 소상공인24 등
-        공공 오픈API (NIPA 순차 추가 예정). 게시 내용은 수집 시점 기준이며,
-        각 사업의 정확한 자격·일정·금액은 반드시 원문 공고를 확인하시기
-        바랍니다.
+        데이터 출처: K-Startup · 기업마당(bizinfo) · 보조금24 · 소상공인24 ·
+        경기도경제과학진흥원(GBSA) · 판판대로 · 서울경제진흥원(SBA) ·
+        과학기술정보통신부(NIPA). 게시 내용은 수집 시점 기준이며, 각 사업의
+        정확한 자격·일정·금액은 반드시 원문 공고를 확인하시기 바랍니다.
       </footer>
     </main>
   );
