@@ -31,6 +31,16 @@ function isOtherRegionOnly(title: string | null | undefined): boolean {
   return OTHER_REGION_RE.test(t);
 }
 
+// 지원사업이 아닌 행정·시상·이벤트성 공고(제목에 있으면 제외).
+// 주의: '유공'은 '공유공장' 오탐 → 제외하지 않고 '포상'으로 커버. '채용지원'(보조금)은 살림.
+const ADMIN_NOISE_RE =
+  /포상|시상|표창|공로패|감사패|수상작|당선작|파기\s?신청|파기서비스|말소\s?신청|과태료|증명서\s?발급|확인서\s?발급|인증제\s?시행|위원\s?위촉|위원회\s?구성|밋업|공청회/;
+
+/** 제목 기준: 포상·시상·인증제 시행·파기 등 지원사업이 아닌 행정/이벤트성 공고인가. */
+function isAdminNoise(title: string | null | undefined): boolean {
+  return ADMIN_NOISE_RE.test(title ?? "");
+}
+
 // 통합 수집 라우트 — "스타트업·소상공인 지원사업"
 //   GET|POST /api/ingest/bizinfo?token=INGEST_TOKEN[&cnt=300]
 //
@@ -302,8 +312,12 @@ async function handle(req: NextRequest) {
     // 품질 가드 2: 서울·경기 외 타 지역 전용 공고 제외(소스 무관).
     // 제목에 서울/경기/수도권/전국 신호가 없고 타 광역·권역·타지역 도시가 있으면 제외.
     // (경기 광주시/이천/여주와 충돌하는 단독 '광주/이천/여주'는 넣지 않음 → 광역시만 '광주광역시')
-    const programs = fresh.filter((p) => !isOtherRegionOnly(p.title));
-    const otherRegionDropped = fresh.length - programs.length;
+    const regionClean = fresh.filter((p) => !isOtherRegionOnly(p.title));
+    const otherRegionDropped = fresh.length - regionClean.length;
+
+    // 품질 가드 3: 포상·시상·인증제 시행·파기 등 지원사업이 아닌 행정/이벤트성 제외.
+    const programs = regionClean.filter((p) => !isAdminNoise(p.title));
+    const adminDropped = regionClean.length - programs.length;
 
     // DB 적재 함수 호출(SECURITY DEFINER, RLS 우회). anon 클라이언트로 호출하되
     // secret(=INGEST_TOKEN)로 보호. service_role 불필요.
@@ -342,6 +356,7 @@ async function handle(req: NextRequest) {
       nipaError,
       expiredDropped,
       otherRegionDropped,
+      adminDropped,
       unique: programs.length,
       result,
       purged: purge,
