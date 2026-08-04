@@ -12,6 +12,7 @@ import { fetchSbaRaw, fetchSbaPrograms } from "@/lib/sba";
 import { fetchSmtechRaw } from "@/lib/smtech";
 import { classifyIndustry } from "@/lib/industry";
 import { classifyBizType } from "@/lib/bizType";
+import { fetchEvergreenPrograms } from "@/lib/evergreen";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -285,9 +286,13 @@ async function handle(req: NextRequest) {
       }
     }
 
+    // 소스 9: 에버그린(상시 제도) — 노란우산공제 등 공고 피드에 없는 상시 사업.
+    const evergreen = fetchEvergreenPrograms();
+
     const byId = new Map<string, NormalizedProgram>();
     for (const p of [
       ...raw, ...kstartup, ...bojo, ...sbiz, ...gbsa, ...fanfan, ...sba, ...nipa,
+      ...evergreen,
     ])
       byId.set(p.external_id, p);
     const merged = [...byId.values()].map((p) => ({
@@ -348,6 +353,7 @@ async function handle(req: NextRequest) {
         fanfan: fanfan.length,
         sba: sba.length,
         nipa: nipa.length,
+        evergreen: evergreen.length,
       },
       kstartupError,
       bojoError,
