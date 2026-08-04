@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { Category, ProgramRow, Province, Region } from "@/lib/types";
 import { INDUSTRIES } from "@/lib/industry";
@@ -23,11 +23,59 @@ export default function SearchClient({
   );
   const [bizType, setBizType] = useState<string | null>(null); // 내 기업 형태(단일)
   const [industry, setIndustry] = useState<string | null>(null); // 내 업종(단일)
+  // 선택한 형태·지역·카테고리에서 실제 사업이 있는 업종만(건수 포함). null=아직 로딩 전.
+  const [availableInd, setAvailableInd] = useState<Map<string, number> | null>(
+    null,
+  );
 
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [results, setResults] = useState<ProgramRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  // 형태·지역·카테고리가 바뀌면 실제 사업이 있는 업종만 다시 계산.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const sb = getSupabase();
+        const allCats = selectedCategories.size === categories.length;
+        const { data, error } = await sb.rpc("available_industries", {
+          p_region_ids: [...selectedRegions],
+          p_category_ids:
+            selectedCategories.size === 0 || allCats ? [] : [...selectedCategories],
+          p_biz_type: bizType,
+        });
+        if (cancelled) return;
+        const m = new Map<string, number>();
+        if (!error && Array.isArray(data)) {
+          for (const row of data as { industry: string; n: number }[]) {
+            m.set(row.industry, Number(row.n));
+          }
+        }
+        setAvailableInd(m);
+        // 선택했던 업종이 더 이상 목록에 없으면 해제
+        setIndustry((cur) => (cur && !m.has(cur) ? null : cur));
+      } catch {
+        if (!cancelled) setAvailableInd(new Map());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRegions, selectedCategories, bizType]);
+
+  // 실제 사업이 있는 업종만(건수 많은 순). availableInd 로딩 전이면 전체 노출.
+  const visibleIndustries = useMemo(
+    () =>
+      availableInd
+        ? INDUSTRIES.filter((i) => availableInd.has(i)).sort(
+            (a, b) => (availableInd.get(b) ?? 0) - (availableInd.get(a) ?? 0),
+          )
+        : [...INDUSTRIES],
+    [availableInd],
+  );
 
   const regionsByProvince = useMemo(() => {
     const map: Record<Province, Region[]> = { 서울: [], 경기: [] };
@@ -341,8 +389,9 @@ export default function SearchClient({
         </div>
         <p className="mb-4 text-xs leading-relaxed text-muted">
           업종을 고르지 않으면 <b className="text-foreground">전업종 공통</b>{" "}
-          사업만 보여줍니다. 내 업종을 고르면 그 업종 전용 사업(예: 제조업·숙박
-          음식점업 등)이 함께 표시됩니다. 업종 구분은 소상공인24와 동일 체계입니다.
+          사업만 보여줍니다. 아래 업종은{" "}
+          <b className="text-foreground">현재 조건(형태·지역·카테고리)에서 실제
+          해당 사업이 있는 업종</b>만 표시됩니다(괄호는 사업 수).
         </p>
         <div className="flex flex-wrap gap-2">
           <button
@@ -356,8 +405,9 @@ export default function SearchClient({
           >
             전업종(공통)
           </button>
-          {INDUSTRIES.map((ind) => {
+          {visibleIndustries.map((ind) => {
             const on = industry === ind;
+            const cnt = availableInd?.get(ind);
             return (
               <button
                 key={ind}
@@ -370,9 +420,15 @@ export default function SearchClient({
                 }`}
               >
                 {ind}
+                {cnt ? <span className="ml-1 opacity-60">({cnt})</span> : null}
               </button>
             );
           })}
+          {availableInd && visibleIndustries.length === 0 && (
+            <span className="text-xs text-muted">
+              이 조건에는 업종 전용 사업이 없습니다 — 전업종(공통) 사업만 검색됩니다.
+            </span>
+          )}
         </div>
       </section>
 
