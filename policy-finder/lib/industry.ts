@@ -29,6 +29,56 @@ export const INDUSTRIES = [
 
 export type Industry = (typeof INDUSTRIES)[number] | typeof DEFAULT_INDUSTRY;
 
+// 기업 형태별로 노출할 업종 세트(관련도 높은 순). 업종 목록은 오직 기업 형태로만
+// 결정된다(지역·지원종류와 무관). 형태 미선택 시엔 전체(INDUSTRIES)를 보여준다.
+//  - 소상공인: 자영업·동네가게가 실제 운영하는 업종(음식점·도소매·미용·학원 등)
+//  - 중소기업: 제조·IT·전문서비스·건설·물류 등 사업체 업종
+//  - 창업/스타트업: IT·기술·바이오·콘텐츠 등 창업이 많은 업종
+export const INDUSTRIES_BY_BIZTYPE: Record<string, readonly string[]> = {
+  소상공인: [
+    "숙박·음식점업",
+    "도매·소매업",
+    "협회·수리·개인서비스업",
+    "교육서비스업",
+    "예술·스포츠·여가서비스업",
+    "보건·사회복지서비스업",
+    "제조업",
+    "부동산업",
+    "운수·창고업",
+    "농업·임업·어업",
+  ],
+  중소기업: [
+    "제조업",
+    "정보통신업",
+    "전문·과학·기술서비스업",
+    "도매·소매업",
+    "건설업",
+    "운수·창고업",
+    "사업시설·임대서비스업",
+    "보건·사회복지서비스업",
+    "예술·스포츠·여가서비스업",
+    "농업·임업·어업",
+  ],
+  창업: [
+    "정보통신업",
+    "전문·과학·기술서비스업",
+    "제조업",
+    "보건·사회복지서비스업",
+    "예술·스포츠·여가서비스업",
+    "교육서비스업",
+    "도매·소매업",
+    "농업·임업·어업",
+  ],
+};
+
+/** 기업 형태에 해당하는 업종 목록. 형태 미선택(null)이면 전체. */
+export function industriesForBizType(bizType: string | null): readonly string[] {
+  if (bizType && INDUSTRIES_BY_BIZTYPE[bizType]) {
+    return INDUSTRIES_BY_BIZTYPE[bizType];
+  }
+  return INDUSTRIES;
+}
+
 // 우선순위 순. 섹터 전용성이 강한 키워드만(범용 사업이 오탐되지 않게 보수적).
 // 범용 단어(교육/컨설팅/유통/플랫폼/IT 등 단독)는 피하고 "업" 접미 등 업종 신호를 사용.
 const RULES: { name: (typeof INDUSTRIES)[number]; re: RegExp }[] = [

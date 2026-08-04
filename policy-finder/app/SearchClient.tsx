@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { Category, ProgramRow, Province, Region } from "@/lib/types";
-import { INDUSTRIES } from "@/lib/industry";
+import { industriesForBizType } from "@/lib/industry";
 import { BIZ_TYPES } from "@/lib/bizType";
 
 const PROVINCES: Province[] = ["서울", "경기"];
@@ -23,57 +23,22 @@ export default function SearchClient({
   );
   const [bizType, setBizType] = useState<string | null>(null); // 내 기업 형태(단일)
   const [industry, setIndustry] = useState<string | null>(null); // 내 업종(단일)
-  // 선택한 형태·지역·카테고리에서 실제 사업이 있는 업종만(건수 포함). null=아직 로딩 전.
-  const [availableInd, setAvailableInd] = useState<Map<string, number> | null>(
-    null,
-  );
 
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [results, setResults] = useState<ProgramRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // 업종 목록은 '기업 형태'에만 연동한다(지역·카테고리와 무관).
-  // 형태를 고르면 그 형태에 해당하는 업종이 뜨고, 업종을 고르면 그때 결과가 걸러진다.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const sb = getSupabase();
-        const { data, error } = await sb.rpc("available_industries", {
-          p_region_ids: [],
-          p_category_ids: [],
-          p_biz_type: bizType,
-        });
-        if (cancelled) return;
-        const m = new Map<string, number>();
-        if (!error && Array.isArray(data)) {
-          for (const row of data as { industry: string; n: number }[]) {
-            m.set(row.industry, Number(row.n));
-          }
-        }
-        setAvailableInd(m);
-        // 형태가 바뀌어 선택했던 업종이 목록에 없으면 해제
-        setIndustry((cur) => (cur && !m.has(cur) ? null : cur));
-      } catch {
-        if (!cancelled) setAvailableInd(new Map());
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [bizType]);
-
-  // 실제 사업이 있는 업종만(건수 많은 순). availableInd 로딩 전이면 전체 노출.
+  // 업종 목록은 '기업 형태'로만 결정된다(지역·지원종류와 무관).
   const visibleIndustries = useMemo(
-    () =>
-      availableInd
-        ? INDUSTRIES.filter((i) => availableInd.has(i)).sort(
-            (a, b) => (availableInd.get(b) ?? 0) - (availableInd.get(a) ?? 0),
-          )
-        : [...INDUSTRIES],
-    [availableInd],
+    () => industriesForBizType(bizType),
+    [bizType],
   );
+
+  // 형태가 바뀌어 선택했던 업종이 새 목록에 없으면 자동 해제.
+  useEffect(() => {
+    setIndustry((cur) => (cur && !visibleIndustries.includes(cur) ? null : cur));
+  }, [visibleIndustries]);
 
   const regionsByProvince = useMemo(() => {
     const map: Record<Province, Region[]> = { 서울: [], 경기: [] };
@@ -386,9 +351,8 @@ export default function SearchClient({
           </span>
         </div>
         <p className="mb-4 text-xs leading-relaxed text-muted">
-          아래 업종은{" "}
-          <b className="text-foreground">선택한 기업 형태에 해당하는 업종</b>만
-          표시됩니다(괄호는 사업 수). 업종을 고르지 않으면{" "}
+          업종은 <b className="text-foreground">선택한 기업 형태</b>에 따라
+          표시됩니다{bizType ? ` (${bizType} 업종)` : ""}. 업종을 고르지 않으면{" "}
           <b className="text-foreground">전업종 공통</b> 사업만, 고르면 그 업종
           전용 사업이 함께 검색됩니다.
         </p>
@@ -406,7 +370,6 @@ export default function SearchClient({
           </button>
           {visibleIndustries.map((ind) => {
             const on = industry === ind;
-            const cnt = availableInd?.get(ind);
             return (
               <button
                 key={ind}
@@ -419,16 +382,9 @@ export default function SearchClient({
                 }`}
               >
                 {ind}
-                {cnt ? <span className="ml-1 opacity-60">({cnt})</span> : null}
               </button>
             );
           })}
-          {availableInd && visibleIndustries.length === 0 && (
-            <span className="text-xs text-muted">
-              이 기업 형태에는 업종 전용 사업이 없습니다 — 전업종(공통) 사업만
-              검색됩니다.
-            </span>
-          )}
         </div>
       </section>
 
