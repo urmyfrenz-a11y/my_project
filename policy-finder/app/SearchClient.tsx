@@ -33,17 +33,16 @@ export default function SearchClient({
   const [results, setResults] = useState<ProgramRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // 형태·지역·카테고리가 바뀌면 실제 사업이 있는 업종만 다시 계산.
+  // 업종 목록은 '기업 형태'에만 연동한다(지역·카테고리와 무관).
+  // 형태를 고르면 그 형태에 해당하는 업종이 뜨고, 업종을 고르면 그때 결과가 걸러진다.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const sb = getSupabase();
-        const allCats = selectedCategories.size === categories.length;
         const { data, error } = await sb.rpc("available_industries", {
-          p_region_ids: [...selectedRegions],
-          p_category_ids:
-            selectedCategories.size === 0 || allCats ? [] : [...selectedCategories],
+          p_region_ids: [],
+          p_category_ids: [],
           p_biz_type: bizType,
         });
         if (cancelled) return;
@@ -54,7 +53,7 @@ export default function SearchClient({
           }
         }
         setAvailableInd(m);
-        // 선택했던 업종이 더 이상 목록에 없으면 해제
+        // 형태가 바뀌어 선택했던 업종이 목록에 없으면 해제
         setIndustry((cur) => (cur && !m.has(cur) ? null : cur));
       } catch {
         if (!cancelled) setAvailableInd(new Map());
@@ -63,8 +62,7 @@ export default function SearchClient({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRegions, selectedCategories, bizType]);
+  }, [bizType]);
 
   // 실제 사업이 있는 업종만(건수 많은 순). availableInd 로딩 전이면 전체 노출.
   const visibleIndustries = useMemo(
@@ -388,10 +386,11 @@ export default function SearchClient({
           </span>
         </div>
         <p className="mb-4 text-xs leading-relaxed text-muted">
-          업종을 고르지 않으면 <b className="text-foreground">전업종 공통</b>{" "}
-          사업만 보여줍니다. 아래 업종은{" "}
-          <b className="text-foreground">현재 조건(형태·지역·카테고리)에서 실제
-          해당 사업이 있는 업종</b>만 표시됩니다(괄호는 사업 수).
+          아래 업종은{" "}
+          <b className="text-foreground">선택한 기업 형태에 해당하는 업종</b>만
+          표시됩니다(괄호는 사업 수). 업종을 고르지 않으면{" "}
+          <b className="text-foreground">전업종 공통</b> 사업만, 고르면 그 업종
+          전용 사업이 함께 검색됩니다.
         </p>
         <div className="flex flex-wrap gap-2">
           <button
@@ -426,7 +425,8 @@ export default function SearchClient({
           })}
           {availableInd && visibleIndustries.length === 0 && (
             <span className="text-xs text-muted">
-              이 조건에는 업종 전용 사업이 없습니다 — 전업종(공통) 사업만 검색됩니다.
+              이 기업 형태에는 업종 전용 사업이 없습니다 — 전업종(공통) 사업만
+              검색됩니다.
             </span>
           )}
         </div>
@@ -468,9 +468,9 @@ function Results({
   if (total === 0) {
     return (
       <div className="rounded-xl border border-line bg-card p-8 text-center text-sm text-muted">
-        조건에 맞는 신청 가능한 지원사업이 없습니다.
+        현재 해당되는 지원 사업이 없습니다.
         <br />
-        지역이나 카테고리를 넓혀 다시 검색해 보세요.
+        지역·기업 형태·업종·카테고리 조건을 넓혀 다시 검색해 보세요.
       </div>
     );
   }
