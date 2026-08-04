@@ -292,7 +292,9 @@ async function handle(req: NextRequest) {
       byId.set(p.external_id, p);
     const merged = [...byId.values()].map((p) => ({
       ...p,
-      industry: classifyIndustry(p.title, p.summary, p.institution_name),
+      // 업종은 제목 기준만으로 판정(요약·기관명까지 보면 aT·KOCCA 등 운영기관 때문에
+      // 일반 사업이 엉뚱한 업종으로 과다태깅됨 → 정밀도 우선).
+      industry: classifyIndustry(p.title),
       biz_type: classifyBizType(
         p.external_id,
         p.title,
