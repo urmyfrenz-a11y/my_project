@@ -275,10 +275,11 @@ function collectStrings(state: unknown, aliases: string[]): string[] {
 /** homepage/SNS 링크 수집: 배열(sns/homepages/urls…) + 스칼라 URL 필드(instagram/blog…) */
 function collectLinks(state: unknown): string[] {
   const out = new Set<string>();
+  // 배열형: homepageEtc(=[{url,type}…]), sns 등 → collectStrings 가 각 항목의 url 추출
   for (const s of collectStrings(state, [
     "homepages",
-    "homepage",
     "homePages",
+    "homepageEtc",
     "sns",
     "snsList",
     "snsUrls",
@@ -291,8 +292,10 @@ function collectLinks(state: unknown): string[] {
   ])) {
     if (/^https?:\/\//i.test(s)) out.add(s);
   }
-  // 인스타·블로그 등 개별 스칼라 URL 필드 (정보 탭 SNS)
+  // 스칼라 URL 필드: homepage(인스타 등)·siteLanding·인스타/블로그 개별 필드
   const scalarKeys = new Set([
+    "homepage",
+    "sitelanding",
     "instagram",
     "blog",
     "naverblog",
@@ -452,7 +455,9 @@ export function normalize(state: unknown, parsed: ParsedUrl): NormalizedPlace {
       "naverBooking",
       "reserveUrl",
     ]) ||
-    findCount(state, ["bookings", "reservations", "bookingItems", "reservationItems"], []) > 0;
+    findCount(state, ["bookings", "reservations", "bookingItems", "reservationItems"], []) > 0 ||
+    // 액터가 예약 전용 필드를 주지 않을 때: 편의시설의 '예약/주문'을 신호로 사용
+    conveniences.some((c) => /예약|주문/.test(c));
   const hasTalktalk = findTruthy(state, [
     "talktalkUrl",
     "talktalk",

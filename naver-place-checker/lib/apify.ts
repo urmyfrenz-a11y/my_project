@@ -39,6 +39,12 @@ export async function fetchPlaceViaApify(url: string): Promise<ApifyResult> {
     maxReviews: 0,
     maxReviewsPerPlace: 0,
     includeMenu: true,
+    // 업체 사진·소식을 받기 위한 best-effort 플래그(액터가 모르면 무시됨)
+    includeImages: true,
+    includePhotos: true,
+    maxImages: 30,
+    includeNews: true,
+    includeFeed: true,
   };
 
   const endpoint =

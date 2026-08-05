@@ -63,7 +63,7 @@ async function diagnoseViaApify(url: string, parsed: ParsedUrl | null, debug: bo
   const item = r.item;
 
   // place id: URL에서 못 뽑았으면 액터 결과에서 보완
-  const idFromItem = String(item.placeId ?? item.id ?? item.seq ?? "");
+  const idFromItem = String(item.place_id ?? item.placeId ?? item.id ?? item.seq ?? "");
   const pid = parsed?.id ?? (/^\d{6,}$/.test(idFromItem) ? idFromItem : "unknown");
   const ptype = parsed?.type ?? "place";
 
