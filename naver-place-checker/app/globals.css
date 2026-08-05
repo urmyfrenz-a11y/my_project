@@ -194,7 +194,8 @@ body {
   text-align: center;
   color: var(--muted);
   font-size: 13.5px;
-  margin-top: 44px;
+  /* 입력창→안내문구 간격(B) = 서브타이틀→입력창 간격(A, .search margin-top 30px)의 절반 */
+  margin-top: 15px;
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
