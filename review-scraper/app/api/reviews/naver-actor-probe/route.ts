@@ -45,13 +45,25 @@ export async function GET(req: Request) {
   }
 
   // 2) Live run with the current input shape.
-  const input = {
-    searchKeywords: [q],
-    maxPlacesPerKeyword: 1,
-    maxReviewPages: 3,
-    reviewSort: "NEWEST",
-    includeBlogReviews: includeBlog,
-  };
+  // If a Naver place URL is given, drive the actor by URL (bypasses keyword
+  // resolution); try the two common param shapes. Otherwise search by keyword.
+  const naverUrl = (sp.get("url") ?? "").trim();
+  out.mode = naverUrl ? "url" : "keyword";
+  const input: Record<string, unknown> = naverUrl
+    ? {
+        startUrls: [{ url: naverUrl }],
+        placeUrls: [naverUrl],
+        maxReviewPages: 3,
+        reviewSort: "NEWEST",
+        includeBlogReviews: includeBlog,
+      }
+    : {
+        searchKeywords: [q],
+        maxPlacesPerKeyword: 1,
+        maxReviewPages: 3,
+        reviewSort: "NEWEST",
+        includeBlogReviews: includeBlog,
+      };
   try {
     const r = await fetch(
       `https://api.apify.com/v2/acts/${ACTOR}/run-sync-get-dataset-items` +
