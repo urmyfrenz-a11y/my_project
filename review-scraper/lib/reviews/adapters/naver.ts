@@ -436,12 +436,21 @@ async function naverViaApify(query: string): Promise<CollectResult> {
     });
   }
   if (reviews.length === 0) {
+    // TEMP diagnostic: reveal what the actor actually returned so we can tell an
+    // empty run (place/scrape failure) from a schema change (fields renamed).
+    const arr = Array.isArray(items) ? items : [];
+    const first = arr[0] as Record<string, unknown> | undefined;
+    const diag =
+      `items=${arr.length}` +
+      (first
+        ? `; keys=[${Object.keys(first).join(",")}]; sample=${JSON.stringify(first).slice(0, 220)}`
+        : "");
     return {
       platform: "naver",
       place: null,
       reviews: [],
       ok: false,
-      error: "네이버 리뷰를 찾지 못했습니다.",
+      error: `네이버 리뷰를 찾지 못했습니다. [${diag}]`,
       errorCode: "NO_MATCH",
     };
   }
