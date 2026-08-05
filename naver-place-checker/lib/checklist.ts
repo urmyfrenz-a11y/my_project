@@ -119,16 +119,20 @@ export function buildRows(p: NormalizedPlace): DiagnosisRow[] {
       "category",
     ),
   );
-  rows.push(
-    check(
-      "대표사진(사진 수)",
-      p.photoCount > 0,
-      p.photoCount ? `${p.photoCount}장` : null,
-      "고해상도 매장 사진을 여러 장(최소 10장 이상) 등록하세요.",
-      "대표사진(썸네일) 지정, 1200px 이상 고해상도, 사진 정기 업데이트 확인",
-      "photo",
-    ),
-  );
+  // 대표사진: 있어도 5장 미만이면 O 이지만 "최소 5장 이상" 권고를 남긴다.
+  {
+    const photoOk = p.photoCount > 0;
+    const enough = p.photoCount >= 5;
+    rows.push({
+      key: "photo",
+      label: "대표사진(사진 수)",
+      kind: "check",
+      ok: photoOk,
+      status: photoOk ? `${p.photoCount}장` : "미등록",
+      recommend: enough ? "" : "고해상도 매장 사진을 최소 5장 이상 등록하세요.",
+      note: "대표사진(썸네일) 지정, 1200px 이상 고해상도, 사진 정기 업데이트 확인",
+    });
+  }
   rows.push(
     check(
       "상세설명(소개글)",

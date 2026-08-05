@@ -338,8 +338,32 @@ body {
 }
 
 /* ── Table ── */
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.pdfbtn {
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--brand-ink);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--brand) 24%, transparent);
+  padding: 9px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.08s;
+}
+.pdfbtn:hover {
+  filter: brightness(0.98);
+}
+.pdfbtn:active {
+  transform: translateY(1px);
+}
+
 .tablecard {
-  margin-top: 18px;
+  margin-top: 12px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -352,7 +376,7 @@ table {
   font-size: 14px;
 }
 thead th {
-  text-align: left;
+  text-align: center;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -374,16 +398,16 @@ tbody tr:hover td {
   background: color-mix(in srgb, var(--surface-2) 60%, transparent);
 }
 .col-item {
-  width: 25%;
+  width: 16%;
 }
 .col-status {
-  width: 24%;
+  width: 20%;
 }
 .col-rec {
-  width: 31%;
+  width: 32%;
 }
 .col-note {
-  width: 20%;
+  width: 32%;
 }
 
 .item {

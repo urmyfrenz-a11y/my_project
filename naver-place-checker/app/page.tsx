@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { DiagnoseResult, DiagnosisRow } from "@/lib/types";
+import { buildReportHtml } from "@/lib/report";
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -136,6 +137,25 @@ function Result({ res }: { res: DiagnoseResult }) {
   const C = 2 * Math.PI * R;
   const off = C * (1 - pct / 100);
 
+  function downloadPdf() {
+    const d = new Date();
+    const dateStr = `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.`;
+    const html = buildReportHtml(place!, rows!, score!, dateStr);
+    const w = window.open("", "_blank");
+    if (!w) {
+      alert("팝업이 차단되었습니다. 브라우저에서 팝업을 허용한 뒤 다시 시도해 주세요.");
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    // 폰트/레이아웃이 잡힌 뒤 인쇄 대화상자 → 'PDF로 저장' 선택
+    setTimeout(() => {
+      w.focus();
+      w.print();
+    }, 700);
+  }
+
   return (
     <section className="result">
       <div className="summary">
@@ -188,6 +208,12 @@ function Result({ res }: { res: DiagnoseResult }) {
             필수 {score.done}/{score.total} 완료
           </div>
         </div>
+      </div>
+
+      <div className="toolbar">
+        <button className="pdfbtn" type="button" onClick={downloadPdf}>
+          📄 PDF로 저장
+        </button>
       </div>
 
       <div className="tablecard">
