@@ -119,20 +119,9 @@ export function buildRows(p: NormalizedPlace): DiagnosisRow[] {
       "category",
     ),
   );
-  // 대표사진: 있어도 5장 미만이면 O 이지만 "최소 5장 이상" 권고를 남긴다.
-  {
-    const photoOk = p.photoCount > 0;
-    const enough = p.photoCount >= 5;
-    rows.push({
-      key: "photo",
-      label: "대표사진(사진 수)",
-      kind: "check",
-      ok: photoOk,
-      status: photoOk ? `${p.photoCount}장` : "미등록",
-      recommend: enough ? "" : "고해상도 매장 사진을 최소 5장 이상 등록하세요.",
-      note: "대표사진(썸네일) 지정, 1200px 이상 고해상도, 사진 정기 업데이트 확인",
-    });
-  }
+  // (대표사진 수·소식은 현재 데이터 소스(Apify 액터)가 값을 제공하지 않아,
+  //  거짓 '미등록'을 띄우지 않도록 진단 행에서 제외한다. 관련 조언은 리포트의
+  //  '추가 팁'에 유지한다.)
   rows.push(
     check(
       "상세설명(소개글)",
@@ -194,17 +183,6 @@ export function buildRows(p: NormalizedPlace): DiagnosisRow[] {
       "conveniences",
     ),
   );
-  rows.push(
-    check(
-      "소식(새소식)",
-      p.newsCount > 0,
-      p.newsCount ? `${p.newsCount}건` : null,
-      "소식(새소식)을 주기적으로(월 2회 이상) 발행하세요.",
-      "이벤트·신메뉴·공지로 최신 소식 유지 → '운영 중인 살아있는 매장' 신호",
-      "news",
-    ),
-  );
-
   // ── 선택 연동 (없어도 감점 아님) ──
   rows.push(
     optional(
