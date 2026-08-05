@@ -10,8 +10,15 @@ const ACTOR = "huggable_quote~naver-place-reviews-scraper";
 
 export async function GET(req: Request) {
   const token = process.env.APIFY_TOKEN ?? "";
-  const q = (new URL(req.url).searchParams.get("q") ?? "스타벅스 광교").trim();
-  const out: Record<string, unknown> = { actor: ACTOR, q, hasToken: Boolean(token) };
+  const sp = new URL(req.url).searchParams;
+  const q = (sp.get("q") ?? "스타벅스 광교").trim();
+  const includeBlog = sp.get("blog") === "1";
+  const out: Record<string, unknown> = {
+    actor: ACTOR,
+    q,
+    includeBlog,
+    hasToken: Boolean(token),
+  };
   if (!token) return Response.json(out);
 
   // 1) Actor metadata — is it deprecated / still there?
@@ -43,7 +50,7 @@ export async function GET(req: Request) {
     maxPlacesPerKeyword: 1,
     maxReviewPages: 3,
     reviewSort: "NEWEST",
-    includeBlogReviews: false,
+    includeBlogReviews: includeBlog,
   };
   try {
     const r = await fetch(
@@ -68,6 +75,16 @@ export async function GET(req: Request) {
       const first = items[0] as Record<string, unknown> | undefined;
       out.firstItemKeys = first ? Object.keys(first) : null;
       out.firstItem = first ?? null;
+      // Break down by reviewType (visitor vs blog) + the place it resolved to.
+      const byType: Record<string, number> = {};
+      for (const it of items as Record<string, unknown>[]) {
+        const t = String(it.reviewType ?? "?");
+        byType[t] = (byType[t] ?? 0) + 1;
+      }
+      out.byReviewType = byType;
+      out.resolvedPlace = first
+        ? { name: first.placeName, total: first.placeTotalReviews, url: first.placeUrl }
+        : null;
     } else {
       out.runBody = t.slice(0, 500);
     }
