@@ -44,9 +44,9 @@ export default function Home() {
           네이버 플레이스 세팅 진단
         </span>
         <h1>
-          내 가게 플레이스,
+          내 가게 네이버 플레이스
           <br />
-          <span className="accent">제대로 세팅</span>됐을까요?
+          <span className="accent">기본 점검하기</span>
         </h1>
         <p>
           네이버 플레이스 주소만 붙여넣으면 필수 항목을 점검하고, 부족한 부분에
@@ -223,7 +223,6 @@ function Result({ res }: { res: DiagnoseResult }) {
               <th className="col-item">필수 항목</th>
               <th className="col-status">현재 상태</th>
               <th className="col-rec">권고</th>
-              <th className="col-note">비고</th>
             </tr>
           </thead>
           <tbody>
@@ -292,9 +291,6 @@ function Row({ row }: { row: DiagnosisRow }) {
         ) : (
           <span className="rec empty">—</span>
         )}
-      </td>
-      <td className="col-note note" data-label="비고">
-        {row.note}
       </td>
     </tr>
   );

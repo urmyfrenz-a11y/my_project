@@ -36,7 +36,6 @@ export function buildReportHtml(
         <td class="c-item">${esc(r.label)}</td>
         <td class="c-status">${esc(r.status)}</td>
         <td class="c-rec">${r.recommend ? esc(r.recommend) : "—"}</td>
-        <td class="c-note">${esc(r.note)}</td>
       </tr>`;
     })
     .join("");
@@ -103,11 +102,10 @@ export function buildReportHtml(
   thead th { background: #f0f5f2; border: 1px solid #cdd8d1; padding: 8px 9px; text-align: center;
              font-weight: 700; color: #333; }
   tbody td { border: 1px solid #dde3df; padding: 7px 9px; vertical-align: top; }
-  .c-mark { width: 8%; text-align: center; }
-  .c-item { width: 16%; font-weight: 700; }
-  .c-status { width: 18%; }
-  .c-rec { width: 30%; }
-  .c-note { width: 28%; color: #555; font-size: 9pt; }
+  .c-mark { width: 10%; text-align: center; }
+  .c-item { width: 22%; font-weight: 700; }
+  .c-status { width: 28%; }
+  .c-rec { width: 40%; }
   .mk { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 20px;
         font-size: 8.5pt; font-weight: 800; }
   .m-ok { background: #e6f7ee; color: #12a150; }
@@ -139,7 +137,7 @@ export function buildReportHtml(
   <table>
     <thead><tr>
       <th class="c-mark">판정</th><th class="c-item">필수 항목</th>
-      <th class="c-status">현재 상태</th><th class="c-rec">권고</th><th class="c-note">비고</th>
+      <th class="c-status">현재 상태</th><th class="c-rec">권고</th>
     </tr></thead>
     <tbody>${bodyRows}</tbody>
   </table>

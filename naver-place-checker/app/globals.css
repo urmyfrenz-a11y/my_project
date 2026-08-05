@@ -398,16 +398,13 @@ tbody tr:hover td {
   background: color-mix(in srgb, var(--surface-2) 60%, transparent);
 }
 .col-item {
-  width: 16%;
-}
-.col-status {
   width: 20%;
 }
-.col-rec {
-  width: 32%;
+.col-status {
+  width: 26%;
 }
-.col-note {
-  width: 32%;
+.col-rec {
+  width: 54%;
 }
 
 .item {
