@@ -84,7 +84,11 @@ async function diagnoseViaApify(url: string, parsed: ParsedUrl | null, debug: bo
         ? (item.url as string)
         : url;
 
-  return finish(place, homeUrl, debug ? { source: "apify", item, place } : undefined);
+  return finish(
+    place,
+    homeUrl,
+    debug ? { source: "apify", fields: summarize(item), parsed: place } : undefined,
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -162,4 +166,20 @@ function finish(place: NormalizedPlace, homeUrl: string, debugData: unknown) {
 
 function json(r: DiagnoseResult) {
   return NextResponse.json(r, { status: 200 });
+}
+
+/** 디버그용: 원본 객체를 필드명+타입+짧은 값으로 압축(깊이 2). 실제 필드명 확인용. */
+function summarize(v: unknown, depth = 2): unknown {
+  if (Array.isArray(v)) {
+    return `Array(${v.length})` + (v.length && depth > 0 ? ` of ${JSON.stringify(summarize(v[0], depth - 1))}` : "");
+  }
+  if (v && typeof v === "object") {
+    const o: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      o[k] = depth > 0 ? summarize(val, depth - 1) : typeof val;
+    }
+    return o;
+  }
+  if (typeof v === "string") return v.length > 70 ? v.slice(0, 70) + "…" : v;
+  return v;
 }
