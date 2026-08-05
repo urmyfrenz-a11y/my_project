@@ -16,6 +16,7 @@ export async function POST(req: Request) {
     query?: string;
     platforms?: string[];
     place?: PlaceSearchResult;
+    naverUrl?: string;
   };
   try {
     body = await req.json();
@@ -39,6 +40,11 @@ export async function POST(req: Request) {
   const place =
     body.place && body.place.placeId ? body.place : undefined;
 
-  const results = await collectReviews(query, platforms, place);
+  const naverUrl =
+    typeof body.naverUrl === "string" && body.naverUrl.trim()
+      ? body.naverUrl.trim()
+      : undefined;
+
+  const results = await collectReviews(query, platforms, place, { naverUrl });
   return NextResponse.json({ query, results });
 }

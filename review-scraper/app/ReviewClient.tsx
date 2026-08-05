@@ -201,6 +201,38 @@ export default function ReviewClient() {
     }
   }
 
+  // Fallback for places Naver's keyword search can't resolve: the user pastes
+  // the Naver map link and we re-collect just Naver by URL, then swap in the
+  // result.
+  const [recollectingNaver, setRecollectingNaver] = useState(false);
+  async function recollectNaverWithUrl(naverUrl: string) {
+    if (!chosen || !naverUrl.trim()) return;
+    setRecollectingNaver(true);
+    try {
+      const res = await fetch("/api/reviews/collect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: chosen.name,
+          platforms: ["naver"],
+          place: chosen,
+          naverUrl: naverUrl.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error(`요청 실패 (${res.status})`);
+      const data = (await res.json()) as { results: CollectResult[] };
+      const naver = data.results.find((r) => r.platform === "naver");
+      if (naver)
+        setResults((prev) =>
+          (prev ?? []).map((r) => (r.platform === "naver" ? naver : r)),
+        );
+    } catch {
+      /* keep the existing error card */
+    } finally {
+      setRecollectingNaver(false);
+    }
+  }
+
   const canSubmit = query.trim().length > 0 && selected.length > 0 && !busy;
   const downloadable = (results ?? []).filter(
     (r) => r.ok && r.reviews.length > 0,
@@ -352,6 +384,10 @@ export default function ReviewClient() {
               key={r.platform}
               result={r}
               query={chosen?.name ?? query}
+              onNaverUrl={
+                r.platform === "naver" ? recollectNaverWithUrl : undefined
+              }
+              recollecting={recollectingNaver}
             />
           ))}
         </div>
@@ -430,12 +466,51 @@ function PlacePicker({
   );
 }
 
+function NaverUrlFallback({
+  onSubmit,
+  busy,
+}: {
+  onSubmit: (url: string) => void;
+  busy: boolean;
+}) {
+  const [url, setUrl] = useState("");
+  const valid = /naver\.(me|com)/.test(url);
+  return (
+    <div className="mt-3 rounded-xl border border-line bg-neutral-50 p-3 dark:bg-neutral-900/40">
+      <p className="mb-2 text-xs leading-relaxed">
+        네이버 지도에서 이 장소를 열고 <b>공유 → 링크 복사</b>한 주소를
+        붙여넣으면 리뷰를 가져옵니다.
+      </p>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://naver.me/… 또는 https://map.naver.com/…"
+          className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-indigo-400"
+        />
+        <button
+          type="button"
+          disabled={!valid || busy}
+          onClick={() => onSubmit(url)}
+          className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-40"
+        >
+          {busy ? "수집 중…" : "이 링크로 수집"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PlatformCard({
   result,
   query,
+  onNaverUrl,
+  recollecting,
 }: {
   result: CollectResult;
   query: string;
+  onNaverUrl?: (url: string) => void;
+  recollecting?: boolean;
 }) {
   const { platform, place, reviews, ok, error, errorCode } = result;
   const m = META[platform];
@@ -476,6 +551,9 @@ function PlatformCard({
       {!ok && (
         <div className="px-5 py-4 text-sm text-muted">
           <p className="leading-relaxed">{error}</p>
+          {platform === "naver" && errorCode === "NO_MATCH" && onNaverUrl && (
+            <NaverUrlFallback onSubmit={onNaverUrl} busy={Boolean(recollecting)} />
+          )}
         </div>
       )}
 

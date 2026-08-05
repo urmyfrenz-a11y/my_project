@@ -347,7 +347,10 @@ function normalizeNaverDate(s?: string): string | undefined {
   return toIsoDate(t) ?? t;
 }
 
-async function naverViaApify(query: string): Promise<CollectResult> {
+async function naverViaApify(
+  query: string,
+  naverUrl?: string,
+): Promise<CollectResult> {
   const token = config.naver.apifyToken;
   if (!token) {
     return {
@@ -359,22 +362,33 @@ async function naverViaApify(query: string): Promise<CollectResult> {
       errorCode: "MISSING_KEY",
     };
   }
-  // maxPlacesPerKeyword: 1 → only the top-matching place (no other stores).
-  // includeBlogReviews: false → we only want the place's visitor reviews, not
-  // external blog posts.
-  // maxItems=100 caps the collection at 100 newest reviews (≈$0.10,
-  // pay-per-result) so the free $5/mo lasts ~50 collections. reviewSort NEWEST
-  // → most recent first. The run timeout returns partial results if a big place
-  // would take longer than the function budget.
-  const input = {
-    searchKeywords: [query],
-    maxPlacesPerKeyword: 1,
-    maxReviewPages: 10,
-    reviewSort: "NEWEST",
-    includeBlogReviews: false,
-    includeReviewPhotos: false,
-    includeReviewStats: false,
-  };
+  // Two input modes:
+  //  • keyword (default): the actor resolves the top place from searchKeywords.
+  //  • url (fallback): the user pasted a Naver place URL because keyword search
+  //    couldn't resolve the place (e.g. franchise/ambiguous names). startUrls
+  //    drives the actor straight to that place, which always resolves.
+  // maxItems=100 caps at 100 newest reviews (≈$0.10, pay-per-result) so the free
+  // $5/mo lasts ~50 collections. reviewSort NEWEST → most recent first.
+  const placeUrl = naverUrl?.trim();
+  const input = placeUrl
+    ? {
+        startUrls: [{ url: placeUrl }],
+        placeUrls: [placeUrl],
+        maxReviewPages: 10,
+        reviewSort: "NEWEST",
+        includeBlogReviews: false,
+        includeReviewPhotos: false,
+        includeReviewStats: false,
+      }
+    : {
+        searchKeywords: [query],
+        maxPlacesPerKeyword: 1,
+        maxReviewPages: 10,
+        reviewSort: "NEWEST",
+        includeBlogReviews: false,
+        includeReviewPhotos: false,
+        includeReviewStats: false,
+      };
   const url =
     `https://api.apify.com/v2/acts/${APIFY_ACTOR}/run-sync-get-dataset-items` +
     `?token=${encodeURIComponent(token)}&timeout=55&maxItems=100`;
@@ -436,21 +450,17 @@ async function naverViaApify(query: string): Promise<CollectResult> {
     });
   }
   if (reviews.length === 0) {
-    // TEMP diagnostic: reveal what the actor actually returned so we can tell an
-    // empty run (place/scrape failure) from a schema change (fields renamed).
-    const arr = Array.isArray(items) ? items : [];
-    const first = arr[0] as Record<string, unknown> | undefined;
-    const diag =
-      `items=${arr.length}` +
-      (first
-        ? `; keys=[${Object.keys(first).join(",")}]; sample=${JSON.stringify(first).slice(0, 220)}`
-        : "");
+    // The actor's keyword search can't resolve every place (franchise/ambiguous
+    // names). Guide the user to paste the Naver place link so we can collect by
+    // URL instead — unless they already did, in which case the link was off.
     return {
       platform: "naver",
       place: null,
       reviews: [],
       ok: false,
-      error: `네이버 리뷰를 찾지 못했습니다. [${diag}]`,
+      error: placeUrl
+        ? "붙여넣은 네이버 링크에서 리뷰를 가져오지 못했습니다. 네이버 지도의 해당 장소 링크가 맞는지 확인해 주세요."
+        : "네이버에서 이 장소를 자동으로 찾지 못했습니다. 네이버 지도에서 해당 장소의 링크(공유 → 링크 복사)를 붙여넣으면 리뷰를 수집합니다.",
       errorCode: "NO_MATCH",
     };
   }
@@ -470,8 +480,9 @@ async function naverViaApify(query: string): Promise<CollectResult> {
 export async function naverCollect(
   query: string,
   _place?: PlaceSearchResult,
+  naverUrl?: string,
 ): Promise<CollectResult> {
-  if (config.naver.apifyToken) return naverViaApify(query);
+  if (config.naver.apifyToken) return naverViaApify(query, naverUrl);
   if (config.naver.scrapingKey) return naverViaScrapingApi(query);
   if (config.naver.workerUrl) return naverViaWorker(query);
   return {

@@ -19,8 +19,13 @@ export async function collectReviews(
   query: string,
   platforms: Platform[],
   place?: PlaceSearchResult,
+  opts?: { naverUrl?: string },
 ): Promise<CollectResult[]> {
-  const jobs = platforms.map((p) => COLLECTORS[p](query, place));
+  const jobs = platforms.map((p) =>
+    p === "naver"
+      ? naverCollect(query, place, opts?.naverUrl)
+      : COLLECTORS[p](query, place),
+  );
   const settled = await Promise.allSettled(jobs);
   return settled.map((s, i) =>
     s.status === "fulfilled"
