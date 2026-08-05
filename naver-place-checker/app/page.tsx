@@ -53,7 +53,7 @@ export default function Home() {
           <input
             type="text"
             inputMode="url"
-            placeholder="네이버 플레이스 주소를 붙여넣으세요 (예: https://naver.me/xxxx)"
+            placeholder="네이버 플레이스 주소 붙여넣기"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             aria-label="네이버 플레이스 주소"
@@ -63,8 +63,8 @@ export default function Home() {
           </button>
         </form>
         <p className="hint">
-          네이버 지도에서 매장 → <code>공유</code> → <code>URL 복사</code> 한
-          링크를 붙여넣으면 가장 정확합니다.
+          네이버 플레이스 주소를 붙여 넣어 주세요.{" "}
+          <span className="sub">(네이버맵 → 매장 → 공유 → URL 복사)</span>
         </p>
       </section>
 
