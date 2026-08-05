@@ -272,6 +272,61 @@ function collectStrings(state: unknown, aliases: string[]): string[] {
   return [...new Set(out)];
 }
 
+/** homepage/SNS 링크 수집: 배열(sns/homepages/urls…) + 스칼라 URL 필드(instagram/blog…) */
+function collectLinks(state: unknown): string[] {
+  const out = new Set<string>();
+  for (const s of collectStrings(state, [
+    "homepages",
+    "homepage",
+    "homePages",
+    "sns",
+    "snsList",
+    "snsUrls",
+    "urls",
+    "websites",
+    "links",
+    "channels",
+    "socialLinks",
+    "social",
+  ])) {
+    if (/^https?:\/\//i.test(s)) out.add(s);
+  }
+  // 인스타·블로그 등 개별 스칼라 URL 필드 (정보 탭 SNS)
+  const scalarKeys = new Set([
+    "instagram",
+    "blog",
+    "naverblog",
+    "facebook",
+    "youtube",
+    "website",
+    "homepageurl",
+    "kakaotalk",
+    "band",
+    "twitter",
+    "tiktok",
+    "snsurl",
+  ]);
+  const seen = new Set<unknown>();
+  const stack: unknown[] = [state];
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || typeof node !== "object") continue;
+    if (seen.has(node)) continue;
+    seen.add(node);
+    for (const [k, v] of Object.entries(node as AnyObj)) {
+      if (
+        scalarKeys.has(k.toLowerCase()) &&
+        typeof v === "string" &&
+        /^https?:\/\//i.test(v.trim())
+      ) {
+        out.add(v.trim());
+      }
+      if (v && typeof v === "object") stack.push(v);
+    }
+  }
+  return [...out];
+}
+
 /** 카테고리 문자열로 업종 대분류 판별 (상품 항목 라벨/적용 분기용) */
 export function detectBizType(category: string | null): BizType {
   const c = (category || "").toLowerCase();
@@ -344,11 +399,33 @@ export function normalize(state: unknown, parsed: ParsedUrl): NormalizedPlace {
     ["menus", "menuList", "menuItems", "menu", "rooms", "roomList", "courses", "prices", "priceList"],
     ["menuCount", "totalMenuCount", "totalMenus", "roomCount"],
   );
-  const newsCount = findCount(
+  const newsCountRaw = findCount(
     state,
-    ["news", "newsList", "feed", "announcements", "notices"],
-    ["newsCount", "feedCount", "announcementCount"],
+    [
+      "news",
+      "newsList",
+      "feed",
+      "feedList",
+      "announcements",
+      "notices",
+      "posts",
+      "postList",
+      "recentNews",
+      "newsFeed",
+    ],
+    ["newsCount", "feedCount", "announcementCount", "postCount", "totalNews"],
   );
+  // 소식이 배열이 아니라 최신글 객체/날짜로만 올 수도 있어 보조 신호도 본다.
+  const hasNewsFlag = findTruthy(state, [
+    "hasNews",
+    "latestNews",
+    "lastNews",
+    "newsDate",
+    "lastNewsDate",
+    "recentNewsDate",
+    "lastFeedDate",
+  ]);
+  const newsCount = newsCountRaw > 0 ? newsCountRaw : hasNewsFlag ? 1 : 0;
 
   const conveniences = collectStrings(state, [
     "conveniences",
@@ -357,23 +434,33 @@ export function normalize(state: unknown, parsed: ParsedUrl): NormalizedPlace {
     "options",
     "conveniencesItems",
   ]);
-  const homepages = collectStrings(state, ["homepages", "homepage", "homePages"]);
+  const homepages = collectLinks(state);
 
-  const hasBooking = findTruthy(state, [
-    "bookingBusinessId",
-    "bookingUrl",
-    "hasBooking",
-    "naverBookingUrl",
-    "bookingId",
-    "isBooking",
-    "booking",
-  ]);
+  const hasBooking =
+    findTruthy(state, [
+      "bookingBusinessId",
+      "bookingUrl",
+      "hasBooking",
+      "naverBookingUrl",
+      "bookingId",
+      "isBooking",
+      "booking",
+      "reservation",
+      "hasReservation",
+      "reservationUrl",
+      "naverReservation",
+      "naverBooking",
+      "reserveUrl",
+    ]) ||
+    findCount(state, ["bookings", "reservations", "bookingItems", "reservationItems"], []) > 0;
   const hasTalktalk = findTruthy(state, [
     "talktalkUrl",
     "talktalk",
     "hasTalktalk",
     "talktalkId",
     "talk",
+    "hasTalk",
+    "talkUrl",
   ]);
 
   const visitorReviewCount = findCount(

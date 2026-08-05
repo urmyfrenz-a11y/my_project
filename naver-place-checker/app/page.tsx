@@ -14,11 +14,14 @@ export default function Home() {
     if (!q || loading) return;
     setLoading(true);
     setRes(null);
+    const debugOn =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).has("debug");
     try {
       const r = await fetch("/api/diagnose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: q }),
+        body: JSON.stringify({ url: q, debug: debugOn }),
       });
       setRes((await r.json()) as DiagnoseResult);
     } catch {
@@ -89,6 +92,26 @@ export default function Home() {
 
       {res && res.ok && res.place && res.rows && res.score && (
         <Result res={res} />
+      )}
+
+      {res?.debug != null && (
+        <pre
+          style={{
+            marginTop: 24,
+            padding: 16,
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            fontSize: 12,
+            lineHeight: 1.5,
+            overflow: "auto",
+            maxHeight: 520,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-all",
+          }}
+        >
+          {JSON.stringify(res.debug, null, 2)}
+        </pre>
       )}
 
       <footer className="foot">
