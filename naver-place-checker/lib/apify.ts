@@ -7,8 +7,13 @@
 
 const ACTOR = "huggable_quote~naver-map-scraper";
 
+function apifyToken(): string {
+  // 붙여넣기 과정에서 흔한 앞뒤 공백·줄바꿈·따옴표를 제거해 401 을 예방한다.
+  return (process.env.APIFY_TOKEN ?? "").trim().replace(/^["']|["']$/g, "");
+}
+
 export function hasApify(): boolean {
-  return !!process.env.APIFY_TOKEN;
+  return !!apifyToken();
 }
 
 export interface ApifyResult {
@@ -19,7 +24,7 @@ export interface ApifyResult {
 }
 
 export async function fetchPlaceViaApify(url: string): Promise<ApifyResult> {
-  const token = process.env.APIFY_TOKEN ?? "";
+  const token = apifyToken();
   if (!token) return { ok: false, error: "APIFY_TOKEN 이 설정되지 않았습니다." };
 
   // 액터가 인식하는 대표적인 입력 키들을 함께 넣는다(모르는 키는 대개 무시됨).
