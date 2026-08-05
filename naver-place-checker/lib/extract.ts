@@ -316,19 +316,33 @@ export function normalize(state: unknown, parsed: ParsedUrl): NormalizedPlace {
     ]),
   );
 
-  const hasHours = findCount(state, ["businessHours", "newBusinessHours", "bizHours"], []) > 0;
-  const hoursStr = asString(scalar(["businessHours", "bizHour", "businessStatusDescription"]));
+  const hasHours =
+    findCount(
+      state,
+      ["businessHours", "newBusinessHours", "bizHours", "openHours", "operationTime"],
+      [],
+    ) > 0;
+  const hoursStr = asString(
+    scalar([
+      "businessHours",
+      "bizHour",
+      "businessStatusDescription",
+      "openHours",
+      "operationTime",
+      "runningTime",
+    ]),
+  );
   const businessHours = hasHours || hoursStr ? hoursStr || "등록됨" : null;
 
   const photoCount = findCount(
     state,
     ["images", "imageList", "photos", "photoList", "media"],
-    ["imageCount", "totalImageCount", "photoCount", "totalPhotoCount"],
+    ["imageCount", "totalImageCount", "photoCount", "totalPhotoCount", "totalImages", "totalPhotos"],
   );
   const productCount = findCount(
     state,
-    ["menus", "menuList", "menuItems", "rooms", "roomList", "courses", "prices", "priceList"],
-    ["menuCount", "totalMenuCount", "roomCount"],
+    ["menus", "menuList", "menuItems", "menu", "rooms", "roomList", "courses", "prices", "priceList"],
+    ["menuCount", "totalMenuCount", "totalMenus", "roomCount"],
   );
   const newsCount = findCount(
     state,
@@ -352,18 +366,37 @@ export function normalize(state: unknown, parsed: ParsedUrl): NormalizedPlace {
     "naverBookingUrl",
     "bookingId",
     "isBooking",
+    "booking",
   ]);
-  const hasTalktalk = findTruthy(state, ["talktalkUrl", "talktalk", "hasTalktalk", "talktalkId"]);
+  const hasTalktalk = findTruthy(state, [
+    "talktalkUrl",
+    "talktalk",
+    "hasTalktalk",
+    "talktalkId",
+    "talk",
+  ]);
 
   const visitorReviewCount = findCount(
     state,
     ["visitorReviews", "visitorReviewList"],
-    ["visitorReviewsTotal", "visitorReviewCount", "visitorReviewsTotalCount"],
+    [
+      "visitorReviewsTotal",
+      "visitorReviewCount",
+      "visitorReviewsTotalCount",
+      "totalVisitorReviews",
+      "visitorReviewTotal",
+    ],
   );
   const blogReviewCount = findCount(
     state,
-    ["blogReviews", "fsasReviews"],
-    ["blogCafeReviewCount", "fsasReviewsTotal", "blogReviewCount"],
+    ["blogReviews", "fsasReviews", "blogReviewList"],
+    [
+      "blogCafeReviewCount",
+      "fsasReviewsTotal",
+      "blogReviewCount",
+      "totalBlogReviews",
+      "blogReviewTotal",
+    ],
   );
 
   return {

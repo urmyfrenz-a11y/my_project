@@ -7,10 +7,11 @@ import {
   type ParsedUrl,
 } from "@/lib/extract";
 import { buildRows, bizTypeLabel, scoreOf } from "@/lib/checklist";
+import { hasApify, fetchPlaceViaApify } from "@/lib/apify";
 import { hasKey, looksBlocked, renderNaver, resolveShortLink } from "@/lib/scrapingdog";
-import type { DiagnoseResult } from "@/lib/types";
+import type { DiagnoseResult, NormalizedPlace } from "@/lib/types";
 
-// 렌더링(동적) 호출이 길어 여유 있게. Vercel Hobby 함수 상한(60s) 안으로.
+// 렌더링/액터 호출이 길어 여유 있게. Vercel Hobby 함수 상한(60s) 안으로.
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
@@ -27,23 +28,72 @@ export async function POST(req: NextRequest) {
 
   if (!url) return json({ ok: false, errorCode: "INVALID_URL", error: "URL을 입력해 주세요." });
 
-  if (!hasKey()) {
+  // 링크 표시용 place id/type (naver.me 단축링크는 여기서 null → 나중에 보완)
+  const parsed: ParsedUrl | null = parseNaverUrl(url);
+
+  // ── 1순위: Apify(Naver Map Scraper) — URL을 그대로 받고 네이버 접근을 처리 ──
+  if (hasApify()) {
+    return diagnoseViaApify(url, parsed, debug);
+  }
+
+  // ── 2순위: Scrapingdog(한국 IP 렌더링) 폴백 ──
+  if (hasKey()) {
+    return diagnoseViaScrapingdog(url, parsed, debug);
+  }
+
+  return json({
+    ok: false,
+    errorCode: "NO_KEY",
+    error:
+      "데이터 수집이 설정되지 않았습니다. 환경변수 APIFY_TOKEN(권장) 또는 SCRAPINGDOG_API_KEY 를 등록해 주세요.",
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+async function diagnoseViaApify(url: string, parsed: ParsedUrl | null, debug: boolean) {
+  const r = await fetchPlaceViaApify(url);
+  if (!r.ok || !r.item) {
     return json({
       ok: false,
-      errorCode: "NO_KEY",
-      error:
-        "서버에 SCRAPINGDOG_API_KEY 가 설정되지 않았습니다. 네이버는 데이터센터 IP를 차단하므로 한국 IP 경유 키가 필요합니다.",
+      errorCode: "UPSTREAM",
+      error: `네이버 정보를 불러오지 못했습니다. ${r.error ?? ""}`.trim(),
+      debug: debug ? r : undefined,
+    });
+  }
+  const item = r.item;
+
+  // place id: URL에서 못 뽑았으면 액터 결과에서 보완
+  const idFromItem = String(item.placeId ?? item.id ?? item.seq ?? "");
+  const pid = parsed?.id ?? (/^\d{6,}$/.test(idFromItem) ? idFromItem : "unknown");
+  const ptype = parsed?.type ?? "place";
+
+  const place = normalize(item, { id: pid, type: ptype });
+  if (!place.name && !place.category && place.photoCount === 0) {
+    return json({
+      ok: false,
+      errorCode: "NOT_FOUND",
+      error: "플레이스 정보를 해석하지 못했습니다. (필드 매핑 조정 필요)",
+      debug: debug ? { keys: Object.keys(item), item } : undefined,
     });
   }
 
-  // 1) URL → placeId 해석 (naver.me 단축링크는 한 번 풀어준다)
-  let parsed: ParsedUrl | null = parseNaverUrl(url);
-  if (!parsed) {
-    const isShort = /naver\.me/i.test(url);
-    if (isShort) {
-      const real = await resolveShortLink(url.startsWith("http") ? url : "https://" + url);
-      if (real) parsed = parseNaverUrl(real);
-    }
+  const homeUrl =
+    pid !== "unknown"
+      ? placeHomeUrl(ptype, pid)
+      : typeof item.url === "string"
+        ? (item.url as string)
+        : url;
+
+  return finish(place, homeUrl, debug ? { source: "apify", item, place } : undefined);
+}
+
+// ─────────────────────────────────────────────────────────────
+async function diagnoseViaScrapingdog(url: string, parsedIn: ParsedUrl | null, debug: boolean) {
+  // naver.me 단축링크는 한 번 풀어준다
+  let parsed = parsedIn;
+  if (!parsed && /naver\.me/i.test(url)) {
+    const real = await resolveShortLink(url.startsWith("http") ? url : "https://" + url);
+    if (real) parsed = parseNaverUrl(real);
   }
   if (!parsed) {
     return json({
@@ -54,7 +104,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // 2) 홈 페이지 렌더링
   const home = placeHomeUrl(parsed.type, parsed.id);
   const { ok, status, body } = await renderNaver(home, true, 55000);
   if (!ok) {
@@ -71,22 +120,17 @@ export async function POST(req: NextRequest) {
       error: "네이버가 접근을 일시 차단했습니다(캡차). 잠시 후 다시 시도해 주세요.",
     });
   }
-
-  // 3) 내장 상태 추출 → 정규화
   const state = extractEmbeddedState(body);
   if (!state) {
     return json({
       ok: false,
       errorCode: "NOT_FOUND",
-      error:
-        "이 주소에서 플레이스 정보를 찾지 못했습니다. 존재하는 매장 페이지가 맞는지 확인해 주세요.",
+      error: "이 주소에서 플레이스 정보를 찾지 못했습니다.",
       debug: debug ? { htmlLength: body.length, home } : undefined,
     });
   }
-
   const place = normalize(state, parsed);
   if (!place.name && !place.category && place.photoCount === 0) {
-    // 상태는 있으나 우리가 아는 필드가 하나도 안 잡힌 경우 → 파서 튜닝 필요
     return json({
       ok: false,
       errorCode: "NOT_FOUND",
@@ -94,10 +138,13 @@ export async function POST(req: NextRequest) {
       debug: debug ? { keys: Object.keys(state).slice(0, 40), home } : undefined,
     });
   }
+  return finish(place, home, debug ? { source: "scrapingdog", place } : undefined);
+}
 
+// ─────────────────────────────────────────────────────────────
+function finish(place: NormalizedPlace, homeUrl: string, debugData: unknown) {
   const rows = buildRows(place);
   const score = scoreOf(rows);
-
   return json({
     ok: true,
     place: {
@@ -105,11 +152,11 @@ export async function POST(req: NextRequest) {
       name: place.name ?? "이름 미상",
       category: place.category,
       bizTypeLabel: bizTypeLabel(place.bizType),
-      url: home,
+      url: homeUrl,
     },
     rows,
     score,
-    debug: debug ? place : undefined,
+    debug: debugData,
   });
 }
 
