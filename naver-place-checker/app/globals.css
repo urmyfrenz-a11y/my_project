@@ -474,13 +474,44 @@ tbody tr:hover td {
   color: var(--brand-ink);
   font-weight: 500;
 }
+/* 현재 상태에 값이 있어도 노출하는 '모범답안(확인 사항)' — 옅은 색 */
+.rec.guide {
+  color: var(--faint);
+  font-size: 12.5px;
+  line-height: 1.55;
+  font-weight: 400;
+}
+/* 권고 열에 내용이 없을 때의 '—' 는 가운데 정렬 */
 .rec.empty {
   color: var(--faint);
+  text-align: center;
 }
 .note {
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.5;
+}
+
+/* 자동진단 한계 안내(소식·대표사진) */
+.diag-note {
+  margin: 16px auto 0;
+  max-width: 760px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  word-break: keep-all;
+}
+.diag-note b {
+  color: var(--text);
+  font-weight: 700;
+}
+.diag-note .sub {
+  color: var(--faint);
 }
 
 /* legend + footer */

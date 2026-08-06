@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import type { DiagnoseResult, DiagnosisRow } from "@/lib/types";
-import { buildReportHtml } from "@/lib/report";
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -127,6 +126,7 @@ export default function Home() {
 
 function Result({ res }: { res: DiagnoseResult }) {
   const { place, rows, score } = res;
+  const [pdfBusy, setPdfBusy] = useState(false);
   if (!place || !rows || !score) return null;
   const pct = score.total ? Math.round((score.done / score.total) * 100) : 0;
   const grade =
@@ -137,23 +137,28 @@ function Result({ res }: { res: DiagnoseResult }) {
   const C = 2 * Math.PI * R;
   const off = C * (1 - pct / 100);
 
-  function downloadPdf() {
+  // 브라우저 인쇄창 없이 '진짜 PDF 파일'을 생성해 곧바로 다운로드한다.
+  async function downloadPdf() {
+    if (pdfBusy) return;
     const d = new Date();
     const dateStr = `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.`;
-    const html = buildReportHtml(place!, rows!, score!, dateStr);
-    const w = window.open("", "_blank");
-    if (!w) {
-      alert("팝업이 차단되었습니다. 브라우저에서 팝업을 허용한 뒤 다시 시도해 주세요.");
-      return;
+    try {
+      setPdfBusy(true);
+      const { buildReportBlob } = await import("@/lib/reportPdf");
+      const blob = await buildReportBlob(place!, rows!, score!, dateStr);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `네이버플레이스_진단_${place!.name}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch {
+      alert("PDF 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setPdfBusy(false);
     }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    // 폰트/레이아웃이 잡힌 뒤 인쇄 대화상자 → 'PDF로 저장' 선택
-    setTimeout(() => {
-      w.focus();
-      w.print();
-    }, 700);
   }
 
   return (
@@ -211,8 +216,13 @@ function Result({ res }: { res: DiagnoseResult }) {
       </div>
 
       <div className="toolbar">
-        <button className="pdfbtn" type="button" onClick={downloadPdf}>
-          📄 PDF로 저장
+        <button
+          className="pdfbtn"
+          type="button"
+          onClick={downloadPdf}
+          disabled={pdfBusy}
+        >
+          {pdfBusy ? "PDF 생성 중…" : "📄 PDF로 저장"}
         </button>
       </div>
 
@@ -222,7 +232,7 @@ function Result({ res }: { res: DiagnoseResult }) {
             <tr>
               <th className="col-item">필수 항목</th>
               <th className="col-status">현재 상태</th>
-              <th className="col-rec">권고</th>
+              <th className="col-rec">권고 · 확인 사항</th>
             </tr>
           </thead>
           <tbody>
@@ -247,6 +257,12 @@ function Result({ res }: { res: DiagnoseResult }) {
           <i className="mark num">#</i> 리뷰(숫자)
         </span>
       </div>
+
+      <p className="diag-note">
+        ※ <b>소식</b>과 <b>대표사진</b>은 공개 데이터 수집(크롤링)만으로는 정확히 확인할 수
+        없어 자동 진단에서 제외했습니다. 두 항목은 스마트플레이스에 로그인해 <b>직접 확인</b>해
+        주세요. <span className="sub">(소식은 월 2회 이상 발행, 대표사진은 1200px 이상·최소 5장 권장)</span>
+      </p>
     </section>
   );
 }
@@ -274,6 +290,12 @@ function Row({ row }: { row: DiagnosisRow }) {
       <span className="val miss">{row.status}</span>
     );
 
+  // 권고 열:
+  //  • 조치가 필요한 항목(미등록/미연동) → 권고문을 강조 색으로
+  //  • 현재 상태에 값이 있어도 → 모범답안(확인이 필요한 핵심 사항)을 옅은 색으로
+  const isAction = row.kind !== "number" && row.ok !== true;
+  const recText = isAction ? row.recommend || row.note : row.note;
+
   return (
     <tr>
       <td className="col-item" data-label="필수 항목">
@@ -285,11 +307,11 @@ function Row({ row }: { row: DiagnosisRow }) {
       <td className="col-status status" data-label="현재 상태">
         {statusEl}
       </td>
-      <td className="col-rec" data-label="권고">
-        {row.recommend ? (
-          <div className="rec has">{row.recommend}</div>
+      <td className="col-rec" data-label="권고 · 확인 사항">
+        {recText ? (
+          <div className={isAction ? "rec has" : "rec guide"}>{recText}</div>
         ) : (
-          <span className="rec empty">—</span>
+          <div className="rec empty">—</div>
         )}
       </td>
     </tr>
