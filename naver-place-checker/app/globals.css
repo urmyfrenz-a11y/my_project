@@ -282,6 +282,11 @@ body {
   font-size: 22px;
   letter-spacing: -0.02em;
 }
+/* 점수(숫자) 대신 등급 단어(우수/보통/보완필요)를 게이지 안에 표기 */
+.gauge .num.grade {
+  font-size: 17px;
+  letter-spacing: -0.03em;
+}
 .gauge .num small {
   font-size: 12px;
   color: var(--muted);

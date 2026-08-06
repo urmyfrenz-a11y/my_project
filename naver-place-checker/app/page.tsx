@@ -129,8 +129,9 @@ function Result({ res }: { res: DiagnoseResult }) {
   const [pdfBusy, setPdfBusy] = useState(false);
   if (!place || !rows || !score) return null;
   const pct = score.total ? Math.round((score.done / score.total) * 100) : 0;
-  const grade =
-    pct >= 90 ? "우수" : pct >= 70 ? "양호" : pct >= 50 ? "보통" : "개선 필요";
+  const grade = pct >= 80 ? "우수" : pct >= 50 ? "보통" : "보완필요";
+  const gradeColor =
+    pct >= 80 ? "var(--brand)" : pct >= 50 ? "#f5a524" : "var(--danger)";
 
   // ring gauge
   const R = 40;
@@ -179,7 +180,7 @@ function Result({ res }: { res: DiagnoseResult }) {
               cy="46"
               r={R}
               fill="none"
-              stroke="var(--brand)"
+              stroke={gradeColor}
               strokeWidth="8"
               strokeLinecap="round"
               strokeDasharray={C}
@@ -188,9 +189,8 @@ function Result({ res }: { res: DiagnoseResult }) {
               style={{ transition: "stroke-dashoffset .7s ease" }}
             />
           </svg>
-          <div className="num">
-            {pct}
-            <small>점</small>
+          <div className="num grade" style={{ color: gradeColor }}>
+            {grade}
           </div>
         </div>
 
@@ -208,9 +208,9 @@ function Result({ res }: { res: DiagnoseResult }) {
         </div>
 
         <div className="grade">
-          <div className="g">{grade}</div>
-          <div className="s">
-            필수 {score.done}/{score.total} 완료
+          <div className="s">필수 항목</div>
+          <div className="g">
+            {score.done}/{score.total} 완료
           </div>
         </div>
       </div>

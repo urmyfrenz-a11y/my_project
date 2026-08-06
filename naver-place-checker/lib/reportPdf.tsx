@@ -39,8 +39,8 @@ export async function buildReportBlob(
   }
 
   const pct = score.total ? Math.round((score.done / score.total) * 100) : 0;
-  const grade =
-    pct >= 90 ? "우수" : pct >= 70 ? "양호" : pct >= 50 ? "보통" : "개선 필요";
+  const grade = pct >= 80 ? "우수" : pct >= 50 ? "보통" : "보완필요";
+  const gradeColor = pct >= 80 ? "#048a45" : pct >= 50 ? "#b7791f" : "#e5484d";
 
   const s = StyleSheet.create({
     page: {
@@ -76,8 +76,8 @@ export async function buildReportBlob(
       alignItems: "center",
       marginLeft: 16,
     },
-    scoreN: { fontSize: 22, fontWeight: 700, color: "#048a45" },
-    scoreG: { fontSize: 8.5, color: "#444", marginTop: 1 },
+    scoreGrade: { fontSize: 17, fontWeight: 700 },
+    scoreSub: { fontSize: 8, color: "#666", marginTop: 2 },
     // disclaimer
     callout: {
       backgroundColor: "#f5f8f6",
@@ -213,9 +213,9 @@ export async function buildReportBlob(
               </Text>
             </View>
           </View>
-          <View style={s.scoreBox}>
-            <Text style={s.scoreN}>{pct}</Text>
-            <Text style={s.scoreG}>{grade}</Text>
+          <View style={[s.scoreBox, { borderColor: gradeColor }]}>
+            <Text style={[s.scoreGrade, { color: gradeColor }]}>{grade}</Text>
+            <Text style={s.scoreSub}>필수 {score.done}/{score.total}</Text>
           </View>
         </View>
 
